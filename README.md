@@ -1,42 +1,164 @@
-# gwent-classic
-![cover](https://user-images.githubusercontent.com/26311830/116256903-f1599b00-a7b6-11eb-84a1-16dcb5c9bfc6.jpg)
+<div align="center">
 
-A browser remake of the original Gwent minigame from The Witcher 3: Wild Hunt including all cards from the DLC. To play, download the repo and open index.html in a browser. For the best experience, play in fullscreen which can be toggled in most browsers with F11.
+# ⚔️ Gwent Classic · Online
 
-## Online multiplayer (fork addition)
+**Klasyczny Gwint z Wiedźmina 3 w przeglądarce — teraz także 1 na 1 przez internet.**<br>
+Utwórz grę, wyślij znajomemu kod i siadajcie do stołu. Bez instalacji, bez kont, bez serwera.
 
-Two players can now play against each other over the internet: click **Graj online** on the deck screen, create a game and share the code. The connection is peer-to-peer (PeerJS/WebRTC), so the game still works from any static host such as GitHub Pages. See [ONLINE.md](ONLINE.md) (in Polish) for details.
+<br>
 
-## Rules
-The game is played in the same way as the original. The player aims to win two of three rounds, where victory within a given round is determined by whoever scores the most points. 
+[![Zagraj teraz](https://img.shields.io/badge/▶_ZAGRAJ_TERAZ-d4a017?style=for-the-badge&labelColor=1a1a1a)](https://igit418.github.io/gwent-classic-multiplayer/)
+[![Multiplayer](https://img.shields.io/badge/Multiplayer-1v1_online-8b5a2b?style=for-the-badge&labelColor=1a1a1a)](#-gra-ze-znajomym)
+[![Bez instalacji](https://img.shields.io/badge/Bez_instalacji-działa_w_przeglądarce-4a6b3a?style=for-the-badge&labelColor=1a1a1a)](#)
 
-#### Cards and Points
-Points are obtained by placing down unit cards, each with their corresponding values. Some unit cards have special effects as denoted by a symbol on their left side. The cards and their effects can be examined by selecting them or the row they have been palced on. The game also includes a nubmer of special cards that apply effects like negative weather conditions or bosting card points when played.
+![JavaScript](https://img.shields.io/badge/JavaScript-vanilla-f7df1e?style=flat-square&logo=javascript&logoColor=black)
+![WebRTC](https://img.shields.io/badge/WebRTC-PeerJS-333?style=flat-square&logo=webrtc)
+![Licencja](https://img.shields.io/badge/licencja-MIT_+_Commons_Clause-555?style=flat-square)
 
-#### Turns
-A turn consists of playing a single card. Your opponent then does the same until either one of you passes. At this point the remaining player can continue to place cards until they decide to pass. When both players have passed the round is ended. In addition of placing cards, they player may also activate their leader ability by clicking on their leader if it is available to them.
+<br>
 
-#### Factions
-The faction you pick will affect your game in three ways. It limits the specific cards you can use to neutral cards, special cards, and the unit cards in your faction. This includes the leader card that you can pick and the corresponding leader ability. Each faction also has a special effect that is displayed when selecting a faction and at the top of the customization screen for the currently selected faction.
+<img src="docs/board.jpg" alt="Rozgrywka online — plansza w trakcie partii" width="100%">
 
-## Features
-#### All cards from the TW3 + DLC + NextGen
-All cards from the base games and DLC can be used by you and the AI. This includes the additions from Hearts of Stone and Skellige as a playable deck from Blood and Wine. As of the next-gen update, the Roach card is now also included, along with adding the muster ability to the Geralt and Ciri cards. The total count of cards available corresponds to the number you can find in the original game.
+<sub><i>Partia online: na górze przeciwnik, na dole Ty. Napis „Ruch przeciwnika…” pokazuje, że gra czeka na jego decyzję.</i></sub>
 
-#### Faithful to the original minigame
-This remake aims to resemble the orignal minigame as closely as possible from the font to the UI layout and notifications. Some changes have been made in the form of buttons for settings, exiting a game, and passing your current turn. The deck customization screen also includes changes to upload and download decks, including being able to upload a custom opponent deck.
+</div>
 
-#### AI opponent
-When you start a game you will face off againsts a fully implemented AI oponent. The opponent uses premade decks and will make intelligent decisions based on the cards in its hand, on the table, and in the discard piles.
+<br>
 
-#### Customize, save and upload decks
-You can select a faction to play as at the top of the screen and then add and remove cards from your deck by clicking on the cards in either scroll-down menu. You can also pick a leader card by selecting the current leader and scrolling through the options for that faction. At the top of the screen there are buttons to upload and download decks to play with. These are stored in json format and are checked to see if they comply with their assigned faction and maximum card counts. At the bottom of the screen, you can also customize your opponent by uploading the deck they will play with. 
+## ✨ Co tu znajdziesz
 
-#### Persistent settings
-The game has settings for toggling music, sound effects and showing the in-game notifications. These settings along with customizations like your faction decks are saved in the browser meaning that you can change faction, reload the page, or close the browser, and your settings will be remembered.
+<table>
+<tr>
+<td width="50%" valign="top">
 
-#### Music tracks
-The gwent music tracks are streamed from YouTube and can be toggled by pressing the music icon in the center of the customization screen or the bottom-left of the game screen. For some browsers, the page may need to be refreshed once before the music can be activated.
+### 🌐 Gra online 1 na 1
+Graj ze znajomym przez internet. Jeden gracz tworzy grę i dostaje 5-znakowy kod, drugi go wpisuje. Połączenie idzie bezpośrednio między przeglądarkami.
 
-#### Sound effects
-Most sound effects for gameplay and menus have been added and integrated and can be toggled of via the speaker button. Courtesy of [RandomPianist](https://github.com/RandomPianist/gwent-classic-v3.1) for providing many of the sound effects that I have since edited for this version.
+</td>
+<td width="50%" valign="top">
+
+### 🃏 Wszystkie karty z gry
+Komplet kart z podstawki, **Serc z kamienia**, **Krwi i wina** oraz aktualizacji next-gen, łącznie z Płotką i talią Skellige.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+### 🤖 Przeciwnik komputerowy
+Nie masz z kim zagrać? Zmierz się z AI, które ocenia rękę, stół i cmentarze, zanim wykona ruch.
+
+</td>
+<td valign="top">
+
+### 🛠️ Własne talie
+Buduj talie, zapisuj je do pliku i wczytuj ponownie. Ustawienia i talie zapamiętują się w przeglądarce.
+
+</td>
+</tr>
+</table>
+
+<br>
+
+## 🎮 Gra ze znajomym
+
+> [!TIP]
+> Wystarczą **3 kroki**, a cała gra działa w przeglądarce, także na zwykłym laptopie.
+
+| | Ty | Twój znajomy |
+|:-:|---|---|
+| **1** | Kliknij **Graj online** → **Utwórz grę** | Otwórz tę samą stronę i kliknij **Graj online** |
+| **2** | Wyślij mu kod (np. `K7M2Q`) albo link z **Kopiuj link** | Wpisz kod i kliknij **Dołącz** |
+| **3** | Wybierz talię i kliknij **Gotowy** | Wybierz talię i kliknij **Gotowy** |
+
+Gra startuje, gdy obaj jesteście gotowi. Po partii możecie od razu zagrać **rewanż** albo wrócić do zmiany talii bez rozłączania.
+
+<div align="center">
+<img src="docs/lobby.jpg" alt="Okno tworzenia gry online z kodem" width="48%">
+&nbsp;
+<img src="docs/ready.jpg" alt="Ekran talii z panelem przeciwnika online" width="48%">
+<br>
+<sub><i>Po lewej: kod gry do wysłania znajomemu. Po prawej: wybór talii i status przeciwnika.</i></sub>
+</div>
+
+<br>
+
+## 📜 Zasady w pigułce
+
+Wygrywa ten, kto zwycięży w **dwóch z trzech rund**. Rundę wygrywa gracz z większą liczbą punktów na stole.
+
+- **Tura** to zagranie jednej karty albo użycie zdolności dowódcy.
+- **Pas** kończy Twój udział w rundzie, a przeciwnik może dalej dokładać karty.
+- **Karty specjalne** zmieniają pogodę, wzmacniają rzędy albo palą najsilniejsze jednostki.
+- **Frakcja** ogranicza dostępne karty i daje unikalny bonus (np. Nilfgaard wygrywa remisy).
+
+<details>
+<summary><b>Pełne zasady (rozwiń)</b></summary>
+
+<br>
+
+**Karty i punkty.** Punkty zdobywasz, wykładając karty jednostek. Niektóre jednostki mają zdolności specjalne, oznaczone symbolem po lewej stronie karty. Kartę lub cały rząd możesz kliknąć, żeby obejrzeć efekty. Karty specjalne nakładają np. złą pogodę albo wzmacniają punkty.
+
+**Tury.** W swojej turze zagrywasz jedną kartę, potem kolej przeciwnika, aż jeden z was spasuje. Drugi gracz może wtedy dokładać karty, dopóki też nie spasuje. Gdy obaj spasują, runda się kończy. Zamiast karty możesz też użyć zdolności dowódcy, klikając go, jeśli jest dostępna.
+
+**Frakcje.** Wybrana frakcja wpływa na grę na trzy sposoby: ogranicza karty jednostek do tej frakcji (plus neutralne i specjalne), wyznacza dostępnych dowódców i ich zdolności oraz daje pasywny bonus frakcji, opisany na ekranie budowania talii.
+
+</details>
+
+<br>
+
+## 🔧 Jak działa tryb online
+
+<details>
+<summary><b>Dla ciekawych — technicznie (rozwiń)</b></summary>
+
+<br>
+
+- **Lockstep:** obie przeglądarki liczą tę samą symulację gry. Przez sieć lecą tylko decyzje graczy: jaka karta, do którego rzędu, pas, dowódca, wybory w okienkach.
+- **Wspólna losowość:** tasowanie i losowe efekty korzystają z generatora z tym samym ziarnem, więc u obu graczy dzieje się dokładnie to samo.
+- **Kontrola synchronizacji:** po każdej turze gry porównują skrót stanu. Gdyby kiedyś się rozjechały, pojawi się ostrzeżenie, a szczegóły trafią do konsoli (F12).
+- **Peer-to-peer:** połączenie WebRTC przez [PeerJS](https://peerjs.com/). Publiczny serwer PeerJS tylko „przedstawia” sobie przeglądarki, a sama gra może leżeć na dowolnym hostingu statycznym, np. GitHub Pages.
+
+Szczegóły, testowanie lokalne i hosting opisuje [ONLINE.md](ONLINE.md).
+
+</details>
+
+> [!NOTE]
+> W bardzo restrykcyjnych sieciach (niektóre firmowe lub komórkowe) bezpośrednie połączenie może się nie udać. Zwykle pomaga przejście na domowe Wi-Fi.
+
+<br>
+
+## 🚀 Uruchomienie u siebie
+
+```bash
+git clone https://github.com/igit418/gwent-classic-multiplayer.git
+cd gwent-classic-multiplayer
+python -m http.server 8000
+```
+
+Następnie otwórz `http://localhost:8000`. Do testów online na jednym komputerze dodaj do adresu `?net=local` i otwórz grę w dwóch kartach przeglądarki.
+
+<br>
+
+## 🙏 Podziękowania i licencja
+
+- Oryginalna przeglądarkowa wersja gry: **[Arun Sundaram — gwent-classic](https://github.com/asundr/gwent-classic)**
+- Efekty dźwiękowe: **[RandomPianist](https://github.com/RandomPianist/gwent-classic-v3.1)**
+- Tryb online: rozwinięcie projektu w tym repozytorium
+
+Kod udostępniany jest na licencji **MIT z warunkiem „Commons Clause”**, który zabrania sprzedaży oprogramowania. Pełny tekst jest w pliku [LICENSE](LICENSE).
+
+<sub>Gwint, Wiedźmin oraz grafiki kart należą do CD PROJEKT RED. To niekomercyjny projekt fanowski, niezwiązany z CD PROJEKT RED.</sub>
+
+<br>
+
+<details>
+<summary>🇬🇧 <b>English</b></summary>
+
+<br>
+
+A browser remake of the original Gwent minigame from *The Witcher 3: Wild Hunt*, including all DLC cards, **now with online 1v1 multiplayer**. Click **Graj online** (Play online) on the deck screen, create a game and share the 5-character code with a friend. Both browsers run the same deterministic simulation and exchange only player decisions over a peer-to-peer WebRTC connection, so no game server is needed.
+
+**[▶ Play now](https://igit418.github.io/gwent-classic-multiplayer/)**. Based on [asundr/gwent-classic](https://github.com/asundr/gwent-classic) (MIT + Commons Clause).
+
+</details>
