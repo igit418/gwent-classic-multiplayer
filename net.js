@@ -12,6 +12,7 @@
  * introduce the two browsers, so the game can be hosted on any static host
  * (e.g. GitHub Pages). Adding ?net=local to the URL switches to a BroadcastChannel
  * transport that connects two tabs of the same browser - useful for testing.
+ * STUN/TURN servers are configured in net-config.js; ?relay forces traffic through TURN.
  *
  * All messages are written from the sender's point of view ("self" = the sender).
  */
@@ -20,6 +21,11 @@ const NET_PROTOCOL = 1;
 const NET_PEER_PREFIX = "gwentclassic-online-";
 const NET_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const NET_CODE_LENGTH = 5;
+// Same as the PeerJS defaults: Google STUN plus the free (best effort) PeerJS TURN servers
+const NET_DEFAULT_ICE_SERVERS = [
+	{urls: "stun:stun.l.google.com:19302"},
+	{urls: ["turn:eu-0.turn.peerjs.com:3478", "turn:us-0.turn.peerjs.com:3478"], username: "peerjs", credential: "peerjsp"}
+];
 
 // Controls the opponent in an online game: waits for that player's decisions to arrive
 class ControllerRemote {
@@ -136,6 +142,8 @@ const Net = {
 	desyncReported: false,
 	debug: /[?&]debug\b/.test(location.search),
 	localMode: /[?&]net=local\b/.test(location.search),
+	relayOnly: /[?&]relay\b/.test(location.search),
+	attempt: 0,            // bumped on every reset, so a peer created after an await can tell it is stale
 
 	/* ---------------- state queries used by the game ---------------- */
 
@@ -164,8 +172,10 @@ const Net = {
 			return this.openLocal();
 		if (!this.peerAvailable())
 			return;
-		const peer = new Peer(NET_PEER_PREFIX + this.code, {debug: 1});
-		this.peer = peer;
+		this.createPeer(NET_PEER_PREFIX + this.code, peer => this.listenAsHost(peer));
+	},
+
+	listenAsHost(peer) {
 		peer.on("error", err => {
 			if (err.type === "unavailable-id")
 				return this.host(); // code already taken - pick another one
@@ -192,8 +202,10 @@ const Net = {
 			return this.openLocal();
 		if (!this.peerAvailable())
 			return;
-		const peer = new Peer({debug: 1});
-		this.peer = peer;
+		this.createPeer(null, peer => this.listenAsGuest(peer, code));
+	},
+
+	listenAsGuest(peer, code) {
 		peer.on("open", () => this.attachPeerConnection(peer.connect(NET_PEER_PREFIX + code, {reliable: true, serialization: "json"})));
 		peer.on("error", err => {
 			if (err.type === "peer-unavailable") {
@@ -211,6 +223,49 @@ const Net = {
 		NetUI.showIdle();
 		NetUI.lobbyStatus("Nie udało się wczytać biblioteki PeerJS. Sprawdź połączenie z internetem.", true);
 		return false;
+	},
+
+	// Creates the Peer once the ICE servers are known. id is null for a random id.
+	async createPeer(id, setup) {
+		const attempt = this.attempt;
+		this.connecting = true;
+		const options = {debug: 1, config: {iceServers: await this.iceServers()}};
+		if (this.relayOnly || NetConfig.get().relayOnly)
+			options.config.iceTransportPolicy = "relay";
+		if (attempt !== this.attempt)
+			return; // cancelled while waiting
+		this.connecting = false;
+		const peer = id ? new Peer(id, options) : new Peer(options);
+		this.peer = peer;
+		setup(peer);
+	},
+
+	async iceServers() {
+		const cfg = NetConfig.get();
+		let servers = Array.isArray(cfg.iceServers) ? cfg.iceServers.slice() : [];
+		if (cfg.turnUrls)
+			servers.push({urls: cfg.turnUrls, username: cfg.turnUsername || "", credential: cfg.turnCredential || ""});
+		if (cfg.credentialsUrl) {
+			try {
+				const res = await fetch(cfg.credentialsUrl);
+				if (!res.ok)
+					throw new Error("HTTP " + res.status);
+				const list = await res.json();
+				if (!Array.isArray(list))
+					throw new Error("expected a JSON list of ICE servers");
+				servers = servers.concat(list);
+			} catch (e) {
+				console.warn("[net] could not fetch TURN credentials from credentialsUrl", e);
+			}
+		}
+		if (!servers.length)
+			return NET_DEFAULT_ICE_SERVERS;
+		// A STUN server lets direct connections work without using the TURN relay
+		if (!servers.some(s => [].concat(s.urls).some(u => /^stuns?:/.test(u))))
+			servers.unshift(NET_DEFAULT_ICE_SERVERS[0]);
+		if (this.debug)
+			console.log("[net] ICE servers", servers.map(s => s.urls));
+		return servers;
 	},
 
 	attachPeerConnection(conn) {
@@ -283,6 +338,8 @@ const Net = {
 
 	// Closes everything and goes back to a clean, unconnected state
 	resetConnection() {
+		this.attempt++;
+		this.connecting = false;
 		this.connected = false;
 		if (this.transport) {
 			try { this.transport.close(); } catch (e) {}
@@ -301,7 +358,7 @@ const Net = {
 
 	// Called by the player (Disconnect button, starting a game against the AI)
 	disconnect() {
-		if (!this.transport && !this.peer && !this.localChannel)
+		if (!this.transport && !this.peer && !this.localChannel && !this.connecting)
 			return;
 		this.send({t: "bye"});
 		const wasOnline = this.inGame || game.state !== GameState.CUSTOMIZE;
@@ -614,6 +671,14 @@ const Net = {
 };
 
 // Deck (de)serialization for online games
+// Reads window.GWENT_NET_CONFIG from net-config.js
+const NetConfig = {
+	get() {
+		const cfg = window.GWENT_NET_CONFIG;
+		return cfg && typeof cfg === "object" ? cfg : {};
+	}
+};
+
 const NetDeck = {
 	// Returns the deck if it is a legal deck, otherwise null
 	validate(deck) {
