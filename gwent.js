@@ -2291,6 +2291,12 @@ class UI {
 				await player_op.controller.pickCards(container, count, action, predicate);
 			return;
 		}
+		// after a page reload the local player's saved choices are played back
+		if (player_me.isRemote()) {
+			if (!bView)
+				await player_me.controller.pickCards(container, count, action, predicate, [bSort, bQuit, title]);
+			return;
+		}
 		let carousel = new Carousel(container, count, action, predicate, bSort, bQuit, title);
 		carousel.isView = bView;
 		if (Carousel.curr === undefined || Carousel.curr === null)
@@ -2397,7 +2403,7 @@ class UI {
 	async waitForRowSelection(card)
 	{
 		if (card.holder && card.holder.isRemote())
-			return await card.holder.controller.pickRow();
+			return await card.holder.controller.pickRow(card);
 		const selectedRow = await this.waitForLocalRowSelection(card);
 		Net.sendMove({t: "row", row: selectedRow ? Net.rowToDesc(selectedRow) : null});
 		return selectedRow;
@@ -3159,6 +3165,8 @@ class AudioManager
 
 	static async play(key, waitTime = -1, forceWait = false)
 	{
+		if (NetClock.active) // silent while an online game is fast-forwarded after a reload
+			return;
 		if (AudioManager.source[key])
 		{
 			const audio = AudioManager.source[key];
@@ -3525,6 +3533,11 @@ async function fadeIn(elem, duration){
 async function fade(fadeIn, elem, dur){
 	if (!elem)
 		return;
+	if (NetClock.active) {
+		elem.style.opacity = fadeIn ? 1 : 0;
+		elem.classList.toggle('hide', !fadeIn);
+		return;
+	}
 	return new Promise(res => {
 		const startingOpacity = toInteger(elem.style.opacity);
 		const endOpacity = fadeIn ? 1 : 0;
@@ -3604,6 +3617,8 @@ function asyncAudio(audio)
 
 // Pauses execution until the passed number of milliseconds as expired
 function sleep(ms) {
+  if (NetClock.active)
+    return NetClock.sleep(ms);
   return new Promise(resolve => setTimeout(resolve, ms));
   //return new Promise(resolve => setTimeout(() => {if (func) func(); return resolve();}, ms));
 }

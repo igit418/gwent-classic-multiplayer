@@ -1780,3 +1780,43 @@ main { background-image: url('img/boardtest8.png'); }
 	text-align: center;
 	pointer-events: none;
 }
+
+#online-reconnect {
+	position: fixed;
+	top: 3.2vw;
+	left: 50%;
+	transform: translateX(-50%);
+	z-index: 1250;
+	display: flex;
+	align-items: center;
+	gap: 1vw;
+	padding: 0.5vw 1.2vw;
+	border: .15vw solid rgb(70, 60, 40);
+	background-color: rgba(15, 15, 15, 0.95);
+	color: tan;
+	font-size: 0.95vw;
+}
+#online-reconnect button {
+	height: 1.8vw;
+	padding: 0 0.8vw;
+	border: .2vw solid rgb(40, 40, 40);
+	background-color: rgb(20, 20, 20);
+	color: white;
+	font-family: inherit;
+	font-size: 0.85vw;
+	cursor: pointer;
+}
+#online-reconnect button:hover { border-color: rgb(80, 80, 80); }
+
+#online-replay {
+	position: fixed;
+	inset: 0;
+	z-index: 1200;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background-color: rgba(0, 0, 0, 0.8);
+	color: tan;
+	font-size: 1.6vw;
+}
+#online-replay.hide, #online-reconnect.hide { display: none; }
