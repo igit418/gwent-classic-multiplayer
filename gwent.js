@@ -560,6 +560,7 @@ class Player {
 		
 		if (this === player_me) {
 			document.getElementById("pass-button").classList.remove("noclick");
+			game.localTurn = true;
 		}
 		
 		if (this.controller instanceof ControllerAI || this.controller instanceof ControllerRemote) {
@@ -604,6 +605,7 @@ class Player {
 			this.setPassed(true);
 		if (this === player_me){
 			document.getElementById("pass-button").classList.add("noclick");
+			game.localTurn = false;
 		}
 		document.getElementById("stats-" + this.tag).classList.remove("current-turn");
 		this.elem_leader.children[1].classList.add("hide");
@@ -664,6 +666,8 @@ class Player {
 		if (this.id === 0 && this.leader.activated.length > 0){
 			this.elem_leader.addEventListener("click", 
 				async () => await ui.viewCard(this.leader, async () => {
+					if (!ui.claimLocalTurn())
+						return;
 					AudioManager.playSFX('open');
 					await this.activateLeader();
 		}	), false);
@@ -848,6 +852,9 @@ class Grave extends CardContainer {
 	
 	// Override
 	addCard(card){
+		// summoned tokens (Avenger) vanish instead of going to the graveyard
+		if (card && card.isToken)
+			return;
 		this.setCardOffset(card, this.cards.length);
 		if (card && this.cards.length === 0)
 		{
@@ -1470,6 +1477,7 @@ class Game {
 		this.roundCount = 0;
 		this.roundHistory = [];
 		this.turnIndex = 0;
+		this.localTurn = false; // true while the local player may choose a move
 
 		this.randomRespawn = false;
 		this.doubleSpyPower = false;
@@ -1510,7 +1518,7 @@ class Game {
 
 	isPlaying()
 	{
-		return this.state === GameState.END_SCREEN;
+		return this.state === GameState.PLAYING;
 	}
 
 	setState(newState)
@@ -2002,6 +2010,8 @@ class UI {
 		this.lastRow = null;
 		this.toggleSettings = [];
 		document.getElementById("pass-button").addEventListener("click", () => {
+			if (!this.claimLocalTurn())
+				return;
 			Net.sendMove({t: "turn", kind: "pass"});
 			player_me.passRound();
 			AudioManager.playSFX('pass');
@@ -2036,6 +2046,17 @@ class UI {
 		].forEach(addMouseEnterSFXBySelector);
 	}
 	
+	// Called when the local player commits to a move (play, pass, leader). Returns false if it is
+	// not their turn or a move was already chosen this turn. Clickable elements alone are not a
+	// reliable guard: effects such as row selection or a Carousel enable clicks outside the
+	// player's turn, and a move made then would desync an online game.
+	claimLocalTurn(){
+		if (!game.localTurn || game.currPlayer !== player_me || game.placedEffectsActive)
+			return false;
+		game.localTurn = false;
+		return true;
+	}
+
 	// Enables or disables client interration
 	enablePlayer(enable){
 		let main = document.getElementsByTagName("main")[0].classList;
@@ -2130,6 +2151,8 @@ class UI {
 			this.setSelectable(null, false);
 			this.showPreview(card);
 		} else if (pCard.name === "Decoy") {
+			if (!this.claimLocalTurn())
+				return;
 			Net.sendMove({t: "turn", kind: "decoy", card: pCard.name, target: card.name, row: Net.rowToDesc(row)});
 			this.hidePreview(card);
 			this.enablePlayer(false);
@@ -2155,6 +2178,8 @@ class UI {
 			return;
 		let card = this.previewCard;
 		let holder = card.holder;
+		if (!this.claimLocalTurn())
+			return;
 		if (holder === player_me && card.name !== "Decoy")
 			Net.sendMove({t: "turn", kind: card.name === "Scorch" ? "scorch" : "play", card: card.name, row: Net.rowToDesc(row)});
 		this.hidePreview();
@@ -2405,6 +2430,9 @@ class UI {
 
 	async waitForLocalRowSelection(card)
 	{
+		// restored afterwards, so a row selection outside the player's turn (e.g. Skellige at the
+		// start of round 3) does not leave the board clickable
+		const wasEnabled = !document.getElementsByTagName("main")[0].classList.contains("noclick");
 		game.placedEffectsActive = true;
 		ui.setSelectable(null, false);
 		ui.showPreview(card, false);
@@ -2423,6 +2451,7 @@ class UI {
 		EventManager.previewCancelled.unbind(rowSelect);
 		ui.hidePreview();
 		game.placedEffectsActive = false;
+		ui.enablePlayer(wasEnabled);
 		return selectedRow;
 	}
 }
