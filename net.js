@@ -487,7 +487,8 @@ const Net = {
 			servers.push({urls: cfg.turnUrls, username: cfg.turnUsername || "", credential: cfg.turnCredential || ""});
 		if (cfg.credentialsUrl) {
 			try {
-				const res = await fetch(cfg.credentialsUrl);
+				// a hanging request would block creating the peer (and every reconnection attempt)
+				const res = await fetch(cfg.credentialsUrl, {signal: AbortSignal.timeout(8000)});
 				if (!res.ok)
 					throw new Error("HTTP " + res.status);
 				const list = await res.json();
