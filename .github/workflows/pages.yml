@@ -1,0 +1,43 @@
+# Publishes the game to GitHub Pages with TURN settings taken from repository variables.
+# Optional: runs only when the repository variable PAGES_FROM_ACTIONS is "true"
+# (and Settings -> Pages -> Source is set to "GitHub Actions"). See ONLINE.md.
+# The values end up in a public file, so they are plain variables, not secrets.
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    if: vars.PAGES_FROM_ACTIONS == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Write net-config.js
+        run: node tools/write-net-config.js
+        env:
+          TURN_URLS: ${{ vars.TURN_URLS }}
+          TURN_USERNAME: ${{ vars.TURN_USERNAME }}
+          TURN_CREDENTIAL: ${{ vars.TURN_CREDENTIAL }}
+          TURN_CREDENTIALS_URL: ${{ vars.TURN_CREDENTIALS_URL }}
+          TURN_RELAY_ONLY: ${{ vars.TURN_RELAY_ONLY }}
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+      - id: deployment
+        uses: actions/deploy-pages@v4
