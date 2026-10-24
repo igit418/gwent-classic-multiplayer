@@ -39,14 +39,13 @@ var factions = {
 		name: "Scoia'tael",
 		factionAbility: player => game.gameStart.push( async () => {
 			let notif = "";
-			if (player === player_me) {
-				await ui.popup("Go First", () => game.firstPlayer = player, "Let Opponent Start", () => game.firstPlayer = player.opponent(), "Would you like to go first?", "The Scoia'tael faction perk allows you to decide who will get to go first.", 0.55);
-				Net.sendMove({t: "first", self: game.firstPlayer === player});
-				notif = game.firstPlayer.tag + "-first";
-			} else if (player.isRemote()) {
-				const selfFirst = await player.controller.pickFirst();
+			if (player.isRemote()) {
+				const selfFirst = await player.controller.pickFirst(player);
 				game.firstPlayer = selfFirst ? player : player.opponent();
-				notif = selfFirst ? "scoiatael" : game.firstPlayer.tag + "-first";
+				notif = selfFirst && player !== player_me ? "scoiatael" : game.firstPlayer.tag + "-first";
+			} else if (player === player_me) {
+				await factions.scoiatael.askFirst(player);
+				notif = game.firstPlayer.tag + "-first";
 			} else if (player.controller instanceof ControllerAI) {
 				if (Math.random() < 0.5) {
 					game.firstPlayer = player;
@@ -61,6 +60,11 @@ var factions = {
 			await ui.notification(notif,1200);
 			return true;
 		}),
+		// Lets the local player choose who goes first
+		askFirst: async player => {
+			await ui.popup("Go First", () => game.firstPlayer = player, "Let Opponent Start", () => game.firstPlayer = player.opponent(), "Would you like to go first?", "The Scoia'tael faction perk allows you to decide who will get to go first.", 0.55);
+			Net.sendMove({t: "first", self: game.firstPlayer === player});
+		},
 		description: "Decides who takes first turn."
 	},
 	skellige: {

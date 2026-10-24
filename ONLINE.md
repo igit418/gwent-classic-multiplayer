@@ -20,11 +20,30 @@ hostować za darmo na GitHub Pages.
 
 Gra z komputerem działa jak dawniej.
 
+## Odświeżenie strony i zerwane połączenie
+
+Partia nie kończy się po odświeżeniu karty ani po chwilowej utracie połączenia:
+
+- Po odświeżeniu (F5) gra sama odtwarza partię z zapisanych ruchów (napis „Wznawianie
+  partii…” trwa zwykle sekundę lub dwie) i łączy się ponownie z przeciwnikiem.
+- Drugi gracz widzi w tym czasie pasek „Przeciwnik stracił połączenie. Czekam na jego
+  powrót…” z licznikiem. Może dalej grać swoją turę – ruchy dotrą do przeciwnika po
+  ponownym połączeniu.
+- Jeśli nikt nie wróci w ciągu 3 minut, partia zostaje przerwana. Przycisk **Zakończ partię**
+  na pasku przerywa ją od razu.
+
 ## Jak to działa
 
 Obie przeglądarki liczą tę samą symulację gry. Przez sieć wysyłane są tylko decyzje graczy
 (która karta do którego rzędu, wybory w okienkach, pas, dowódca). Tasowanie i inne losowania
 korzystają z generatora z tym samym ziarnem, więc wynik jest identyczny u obu graczy.
+
+Każdy ruch ma numer i jest zapisywany w `sessionStorage` karty, zanim zostanie wysłany. Po
+odświeżeniu strony gra startuje od nowa z tym samym ziarnem i taliami, a zapisane ruchy obu
+graczy są odtwarzane na przyspieszonym, wirtualnym zegarze (animacje i dźwięki są pomijane).
+Po ponownym połączeniu obie strony wymieniają liczbę otrzymanych ruchów (`resume`) i
+dosyłają brakujące; powtórzone ruchy są pomijane. Host przyjmuje powracającego gracza tylko
+z kluczem partii ustalonym na jej starcie.
 
 Po każdej turze gry porównują skrót (hash) stanu. Jeśli kiedykolwiek się rozjadą, pojawi się
 komunikat, a szczegóły trafią do konsoli przeglądarki (F12). Adres z dopiskiem `?debug`
@@ -139,4 +158,7 @@ wybrana para kandydatów ma typ `relay`.
   firmowe lub komórkowe). Pomaga wtedy serwer TURN (patrz wyżej) albo zmiana sieci.
 - Gra ufa obu klientom: osoba znająca JavaScript mogłaby w konsoli podejrzeć karty rywala.
   Przy grze ze znajomymi nie ma to znaczenia.
-- Zamknięcie lub odświeżenie karty kończy partię u obu graczy.
+- Partię da się wznowić tylko w tej samej karcie przeglądarki (zapis jest w `sessionStorage`)
+  i najpóźniej 15 minut po ostatnim ruchu. Zamknięcie karty i otwarcie gry w nowej oznacza
+  rozłączenie – przeciwnik czeka wtedy 3 minuty albo kończy partię przyciskiem.
+- Przycisk **Rozłącz** i **New Game** kończą partię od razu u obu graczy.

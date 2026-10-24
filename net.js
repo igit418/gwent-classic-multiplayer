@@ -15,9 +15,19 @@
  * STUN/TURN servers are configured in net-config.js; ?relay forces traffic through TURN.
  *
  * All messages are written from the sender's point of view ("self" = the sender).
+ *
+ * Resuming: each client keeps the match (seed, decks and every move of both players) in
+ * sessionStorage. After a page reload the game is rebuilt by replaying that log on a fast
+ * virtual clock, while the connection is re-established. Moves are numbered, so after
+ * reconnecting both sides resend whatever the other one missed.
  */
 
-const NET_PROTOCOL = 1;
+const NET_PROTOCOL = 2;
+const NET_SESSION_VERSION = 1;
+const NET_SESSION_KEY = "gwent-online-session";
+const NET_SESSION_MAX_AGE = 15 * 60 * 1000;   // a saved match older than this is not resumed
+const NET_RECONNECT_TIME = 3 * 60 * 1000;     // how long to wait for the opponent to come back
+const NET_RECONNECT_INTERVAL = 3;             // seconds between reconnection attempts
 const NET_PEER_PREFIX = "gwentclassic-online-";
 const NET_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const NET_CODE_LENGTH = 5;
@@ -33,9 +43,16 @@ class ControllerRemote {
 		this.player = player;
 	}
 
+	// The next decision of this player. Resolves to null when there is none (see ControllerReplay).
+	next(type) {
+		return Net.next(type);
+	}
+
 	// Plays out the remote player's turn
 	async startTurn(player) {
-		const m = await Net.next("turn");
+		const m = await this.next("turn");
+		if (!m)
+			return; // the local player takes the turn through the UI
 		switch (m.kind) {
 			case "pass":
 				AudioManager.playSFX("pass");
@@ -84,7 +101,7 @@ class ControllerRemote {
 	// Initial redraw of up to two cards
 	async redraw() {
 		for (let i = 0; i < 2; i++) {
-			const m = await Net.next("pick");
+			const m = await this.next("pick");
 			if (m.name === null)
 				break;
 			const card = this.findInHand(m.name);
@@ -95,12 +112,15 @@ class ControllerRemote {
 	}
 
 	// Mirrors a Carousel selection made by the remote player
-	async pickCards(container, count, action, predicate) {
+	// carouselArgs: [bSort, bQuit, title] for showing the rest of the choice to the local player
+	async pickCards(container, count, action, predicate, carouselArgs = []) {
 		const valid = c => !predicate || predicate(c);
 		for (let i = 0; i < count; i++) {
 			if (!container.cards.some(valid))
 				break;
-			const m = await Net.next("pick");
+			const m = await this.next("pick");
+			if (!m)
+				return await ui.queueCarousel(container, count - i, action, predicate, ...carouselArgs);
 			if (m.name === null)
 				break;
 			const index = container.cards.findIndex(c => c.name === m.name && valid(c));
@@ -111,20 +131,207 @@ class ControllerRemote {
 	}
 
 	// Mirrors a row selection (agile units restored by medics / Skellige)
-	async pickRow() {
-		const m = await Net.next("row");
+	async pickRow(card) {
+		const m = await this.next("row");
+		if (!m)
+			return await ui.waitForRowSelection(card);
 		return m.row ? Net.descToRow(m.row) : null;
 	}
 
 	// Scoia'tael perk: true if the remote player chose to go first
-	async pickFirst() {
-		const m = await Net.next("first");
+	async pickFirst(player) {
+		const m = await this.next("first");
+		if (!m) {
+			await factions.scoiatael.askFirst(player);
+			return game.firstPlayer === player;
+		}
 		return !!m.self;
 	}
 }
 
+// Controls the local player while a match is rebuilt after a page reload: plays back the
+// decisions saved before the reload. When they run out, the game hands control back to the UI.
+class ControllerReplay extends ControllerRemote {
+	next(type) {
+		return NetReplay.next(type);
+	}
+}
+
+// Virtual time for fast-forwarding a match. sleep() calls are resolved one by one in the order
+// of their deadlines, as real timers would be, but without waiting.
+const NetClock = {
+	active: false,
+	now: 0,
+	seq: 0,
+	timers: [],
+	scheduled: false,
+	channel: null,
+
+	start() {
+		this.active = true;
+		this.now = 0;
+		this.timers = [];
+		if (!this.channel) {
+			// MessageChannel instead of setTimeout(0), which browsers slow down to 4 ms when nested
+			this.channel = new MessageChannel();
+			this.channel.port1.onmessage = () => this.step();
+		}
+	},
+
+	sleep(ms) {
+		return new Promise(resolve => {
+			this.timers.push({at: this.now + Math.max(0, Number(ms) || 0), seq: this.seq++, resolve: resolve});
+			this.kick();
+		});
+	},
+
+	kick() {
+		if (this.scheduled || !this.active)
+			return;
+		this.scheduled = true;
+		this.channel.port2.postMessage(0);
+	},
+
+	// Runs the earliest timer; the game's reaction to it runs before the next step
+	step() {
+		this.scheduled = false;
+		if (!this.active)
+			return;
+		if (this.timers.length === 0)
+			return NetReplay.onIdle();
+		let best = 0;
+		for (let i = 1; i < this.timers.length; i++) {
+			const t = this.timers[i], b = this.timers[best];
+			if (t.at < b.at || (t.at === b.at && t.seq < b.seq))
+				best = i;
+		}
+		const timer = this.timers.splice(best, 1)[0];
+		this.now = timer.at;
+		NetReplay.idleSince = 0;
+		timer.resolve();
+		this.kick();
+	},
+
+	// Back to real time; timers still waiting continue as real ones
+	stop() {
+		this.active = false;
+		for (const t of this.timers)
+			setTimeout(t.resolve, t.at - this.now);
+		this.timers = [];
+	},
+
+	// Drops everything (the fast-forwarded game is abandoned)
+	cancel() {
+		this.active = false;
+		this.timers = [];
+	}
+};
+
+// Plays the local player's saved decisions back after a page reload
+const NetReplay = {
+	active: false,
+	moves: [],
+	index: 0,
+	idleSince: 0,
+	finished: null,
+	resolveFinished: null,
+
+	start(moves) {
+		// moves were written from the local player's point of view, the controller reads them
+		// like moves of the opponent, so rows are mirrored
+		this.moves = moves.map(m => m.row ? Object.assign({}, m, {row: NetReplay.flipRow(m.row)}) : m);
+		this.index = 0;
+		this.idleSince = 0;
+		this.active = true;
+		this.finished = new Promise(resolve => this.resolveFinished = resolve);
+		player_me.controller = new ControllerReplay(player_me);
+		NetClock.start();
+		NetUI.setReplaying(true);
+	},
+
+	flipRow(desc) {
+		if (desc.w)
+			return desc;
+		return {side: desc.side === "self" ? "opp" : "self", type: desc.type};
+	},
+
+	// The next saved decision, or null (after the replay has ended) when there are no more
+	next(type) {
+		if (this.active && this.index < this.moves.length) {
+			const m = this.moves[this.index++];
+			if (m.t !== type)
+				Net.reportDesync("replay: expected '" + type + "', saved '" + m.t + "'");
+			return Promise.resolve(m);
+		}
+		return this.finished.then(() => null);
+	},
+
+	// Called when the game has nothing left to do on the virtual clock
+	onIdle() {
+		if (!this.active)
+			return;
+		if (this.index >= this.moves.length || game.state !== GameState.PLAYING)
+			return this.finish();
+		// still waiting for something that runs in real time - look again shortly
+		if (!this.idleSince)
+			this.idleSince = Date.now();
+		if (Date.now() - this.idleSince > 10000) {
+			Net.reportDesync("replay stalled with " + (this.moves.length - this.index) + " saved moves left");
+			return this.finish();
+		}
+		setTimeout(() => NetClock.kick(), 50);
+	},
+
+	finish() {
+		if (!this.active)
+			return;
+		this.active = false;
+		NetClock.stop();
+		player_me.controller = new Controller();
+		NetUI.setReplaying(false);
+		this.resolveFinished();
+		Net.flushQueue();
+	},
+
+	cancel() {
+		if (!this.active)
+			return;
+		this.active = false;
+		NetClock.cancel();
+		NetUI.setReplaying(false);
+	}
+};
+
+// The current match saved in sessionStorage (survives a page reload, separate for every tab)
+const NetStore = {
+	save(session) {
+		session.savedAt = Date.now();
+		try { sessionStorage.setItem(NET_SESSION_KEY, JSON.stringify(session)); } catch (e) {}
+	},
+
+	load() {
+		try {
+			const s = JSON.parse(sessionStorage.getItem(NET_SESSION_KEY));
+			if (!s || s.v !== NET_SESSION_VERSION || !(Date.now() - s.savedAt < NET_SESSION_MAX_AGE))
+				return null;
+			if (!Array.isArray(s.my) || !Array.isArray(s.op) || !NetDeck.validate(s.decks.me) || !NetDeck.validate(s.decks.op))
+				return null;
+			if ((s.role !== "host" && s.role !== "guest") || !s.code)
+				return null;
+			return s;
+		} catch (e) {
+			return null;
+		}
+	},
+
+	clear() {
+		try { sessionStorage.removeItem(NET_SESSION_KEY); } catch (e) {}
+	}
+};
+
 const Net = {
 	transport: null,       // {send(obj), close()}
+	conn: null,            // current PeerJS data connection
 	peer: null,
 	role: null,            // "host" | "guest"
 	code: null,
@@ -140,6 +347,11 @@ const Net = {
 	lastDecks: null,       // {me, op} of the last game, for rematches
 	hashes: {local: {}, remote: {}},
 	desyncReported: false,
+	session: null,         // the current match, see NetStore
+	reconnecting: false,   // the connection was lost during a match and is being restored
+	reconnectDeadline: 0,
+	reconnectTimer: null,
+	reconnectTicks: 0,
 	debug: /[?&]debug\b/.test(location.search),
 	localMode: /[?&]net=local\b/.test(location.search),
 	relayOnly: /[?&]relay\b/.test(location.search),
@@ -148,7 +360,7 @@ const Net = {
 	/* ---------------- state queries used by the game ---------------- */
 
 	isConnected() { return this.connected; },
-	isOnline() { return this.connected && (this.inGame || game.state === GameState.END_SCREEN || game.state === GameState.PLAYING); },
+	isOnline() { return (this.connected || this.reconnecting) && (this.inGame || game.state === GameState.END_SCREEN || game.state === GameState.PLAYING); },
 
 	/* ---------------- connection ---------------- */
 
@@ -172,16 +384,31 @@ const Net = {
 			return this.openLocal();
 		if (!this.peerAvailable())
 			return;
+		this.createHostPeer();
+	},
+
+	createHostPeer() {
 		this.createPeer(NET_PEER_PREFIX + this.code, peer => this.listenAsHost(peer));
 	},
 
 	listenAsHost(peer) {
 		peer.on("error", err => {
-			if (err.type === "unavailable-id")
+			if (peer !== this.peer)
+				return;
+			if (err.type === "unavailable-id") {
+				if (this.reconnecting) {
+					// the code is still held by the page before the reload - try again soon
+					peer.destroy();
+					this.peer = null;
+					return;
+				}
 				return this.host(); // code already taken - pick another one
+			}
 			this.onConnectionError(err);
 		});
 		peer.on("connection", conn => {
+			if (this.session)
+				return this.attachPendingConnection(conn);
 			if (this.transport) {
 				conn.on("open", () => { conn.send({t: "full"}); setTimeout(() => conn.close(), 500); });
 				return;
@@ -202,19 +429,32 @@ const Net = {
 			return this.openLocal();
 		if (!this.peerAvailable())
 			return;
-		this.createPeer(null, peer => this.listenAsGuest(peer, code));
+		this.createGuestPeer();
 	},
 
-	listenAsGuest(peer, code) {
-		peer.on("open", () => this.attachPeerConnection(peer.connect(NET_PEER_PREFIX + code, {reliable: true, serialization: "json"})));
+	createGuestPeer() {
+		this.createPeer(null, peer => this.listenAsGuest(peer));
+	},
+
+	listenAsGuest(peer) {
+		peer.on("open", () => { if (peer === this.peer) this.connectToHost(); });
 		peer.on("error", err => {
+			if (peer !== this.peer)
+				return;
 			if (err.type === "peer-unavailable") {
+				if (this.reconnecting)
+					return; // the host is not back yet - the next attempt follows
+				const code = this.code;
 				this.resetConnection();
 				NetUI.showIdle();
 				return NetUI.lobbyStatus("Nie znaleziono gry o kodzie " + code + ". Sprawdź kod.", true);
 			}
 			this.onConnectionError(err);
 		});
+	},
+
+	connectToHost() {
+		this.attachPeerConnection(this.peer.connect(NET_PEER_PREFIX + this.code, {reliable: true, serialization: "json"}));
 	},
 
 	peerAvailable() {
@@ -270,14 +510,54 @@ const Net = {
 
 	attachPeerConnection(conn) {
 		conn.on("open", () => {
-			this.transport = {
-				send: obj => conn.send(obj),
-				close: () => conn.close()
-			};
-			this.onConnected();
+			if (this.transport) {
+				conn.close(); // an older reconnection attempt got through as well
+				return;
+			}
+			this.adoptConnection(conn);
 		});
-		conn.on("data", data => this.onMessage(data));
-		conn.on("close", () => this.onConnectionLost());
+		conn.on("data", data => { if (conn === this.conn) this.onMessage(data); });
+		conn.on("close", () => { if (conn === this.conn) this.onConnectionLost(); });
+		conn.on("error", err => console.warn("[net] connection error", err));
+	},
+
+	// Makes conn the connection to the opponent, replacing the previous one
+	adoptConnection(conn) {
+		const old = this.conn;
+		this.conn = conn;
+		this.transport = {
+			send: obj => conn.send(obj),
+			close: () => conn.close()
+		};
+		if (old && old !== conn) {
+			try { old.close(); } catch (e) {}
+		}
+		this.onConnected();
+	},
+
+	// During a match the host only lets in the opponent coming back, who proves it with the
+	// match key. The old connection may not have noticed yet that the opponent is gone.
+	attachPendingConnection(conn) {
+		const early = [];
+		const timer = setTimeout(() => { if (conn !== this.conn) conn.close(); }, 10000);
+		conn.on("data", data => {
+			if (conn === this.conn)
+				return this.onMessage(data);
+			if (!data || typeof data !== "object")
+				return;
+			if (data.t === "resume" && this.session && data.key === this.session.key) {
+				clearTimeout(timer);
+				this.adoptConnection(conn);
+				early.forEach(m => this.onMessage(m));
+				this.onMessage(data);
+			} else if (data.t === "hello") {
+				early.push(data);
+			} else {
+				conn.send({t: "full"});
+				setTimeout(() => conn.close(), 500);
+			}
+		});
+		conn.on("close", () => { if (conn === this.conn) this.onConnectionLost(); });
 		conn.on("error", err => console.warn("[net] connection error", err));
 	},
 
@@ -309,11 +589,30 @@ const Net = {
 	onConnected() {
 		this.connected = true;
 		this.send({t: "hello", name: this.myName, v: NET_PROTOCOL});
+		if (this.session) {
+			// tell the opponent how many of its moves we have, it resends the rest
+			this.send({t: "resume", g: this.session.gid, recv: this.session.op.length, key: this.session.key});
+			const wasReconnecting = this.reconnecting;
+			this.stopReconnect();
+			NetUI.update();
+			if (wasReconnecting)
+				NetUI.toast("Połączono ponownie z przeciwnikiem.");
+			return;
+		}
 		NetUI.onConnected();
 	},
 
 	onConnectionError(err) {
 		console.warn("[net] peer error", err);
+		if (this.session) {
+			// a broken link to the PeerJS server does not end the match: the data connection may
+			// still work, and if it breaks, its "close" event starts reconnecting
+			if (this.peer && (this.peer.destroyed || err.type === "unavailable-id")) {
+				try { this.peer.destroy(); } catch (e) {}
+				this.peer = null;
+			}
+			return;
+		}
 		const wasConnected = this.connected;
 		this.resetConnection();
 		if (wasConnected)
@@ -325,6 +624,8 @@ const Net = {
 	onConnectionLost() {
 		if (!this.connected)
 			return;
+		if (this.session)
+			return this.startReconnect(false);
 		this.resetConnection();
 		this.handleLostOpponent("Połączenie z przeciwnikiem zostało przerwane.");
 	},
@@ -341,6 +642,8 @@ const Net = {
 		this.attempt++;
 		this.connecting = false;
 		this.connected = false;
+		this.stopReconnect();
+		this.clearSession();
 		if (this.transport) {
 			try { this.transport.close(); } catch (e) {}
 		}
@@ -350,10 +653,107 @@ const Net = {
 		if (this.peer) {
 			try { this.peer.destroy(); } catch (e) {}
 		}
-		this.transport = this.peer = this.localChannel = null;
+		this.transport = this.conn = this.peer = this.localChannel = null;
 		this.localReady = this.remoteReady = null;
 		this.lastDecks = null;
 		this.opName = "";
+	},
+
+	/* ---------------- resuming a match ---------------- */
+
+	// Loads a match saved before a page reload, rebuilds it and reconnects. True if resumed.
+	restore() {
+		const s = NetStore.load();
+		if (!s)
+			return false;
+		if (!this.localMode && typeof Peer === "undefined") {
+			NetUI.toast("Nie udało się wczytać biblioteki PeerJS - nie można wznowić partii.");
+			NetStore.clear();
+			return false;
+		}
+		this.session = s;
+		this.role = s.role;
+		this.code = s.code;
+		this.myName = s.myName;
+		this.opName = s.opName;
+		this.launchGame(true);
+		this.startReconnect(true);
+		return true;
+	},
+
+	// Keeps the match and tries to get the connection back.
+	// selfReloaded: this page was reloaded (otherwise the opponent disappeared).
+	startReconnect(selfReloaded) {
+		this.connected = false;
+		this.transport = null;
+		const old = this.conn;
+		this.conn = null;
+		if (old) {
+			try { old.close(); } catch (e) {}
+		}
+		this.reconnecting = true;
+		this.selfReloaded = selfReloaded;
+		this.reconnectDeadline = Date.now() + NET_RECONNECT_TIME;
+		this.reconnectTicks = 0;
+		clearInterval(this.reconnectTimer);
+		this.reconnectTimer = setInterval(() => this.reconnectTick(), 1000);
+		this.reconnectTick();
+	},
+
+	reconnectTick() {
+		if (!this.reconnecting)
+			return;
+		const left = this.reconnectDeadline - Date.now();
+		if (left <= 0)
+			return this.giveUpReconnect("Przeciwnik nie wrócił do gry. Partia została przerwana.");
+		NetUI.showReconnect(this.selfReloaded, Math.ceil(left / 1000));
+		if (!this.transport && this.reconnectTicks++ % NET_RECONNECT_INTERVAL === 0)
+			this.tryReconnect();
+	},
+
+	tryReconnect() {
+		if (this.localMode) {
+			if (!this.localChannel)
+				this.openLocal();
+			else if (this.role === "guest")
+				this.localChannel.postMessage({t: "local-hello"});
+			return;
+		}
+		if (typeof Peer === "undefined")
+			return;
+		if (this.connecting)
+			return; // a peer is being created (waiting for the ICE servers)
+		const peer = this.peer;
+		if (!peer || peer.destroyed)
+			return this.role === "host" ? this.createHostPeer() : this.createGuestPeer();
+		if (peer.disconnected) {
+			try { peer.reconnect(); } catch (e) {}
+			return;
+		}
+		if (this.role === "guest" && peer.open)
+			this.connectToHost();
+	},
+
+	stopReconnect() {
+		this.reconnecting = false;
+		clearInterval(this.reconnectTimer);
+		this.reconnectTimer = null;
+		NetUI.hideReconnect();
+	},
+
+	// Ends a match whose opponent did not come back (also the "End match" button)
+	giveUpReconnect(text) {
+		this.send({t: "bye"});
+		this.resetConnection();
+		this.leaveMatch();
+		NetUI.showIdle();
+		if (text)
+			NetUI.toast(text);
+	},
+
+	clearSession() {
+		this.session = null;
+		NetStore.clear();
 	},
 
 	// Called by the player (Disconnect button, starting a game against the AI)
@@ -388,6 +788,10 @@ const Net = {
 		switch (m.t) {
 			case "hello":
 				this.opName = String(m.name || "").slice(0, 16) || "Przeciwnik";
+				if (this.session) {
+					this.session.opName = this.opName;
+					NetStore.save(this.session);
+				}
 				if (m.v !== NET_PROTOCOL)
 					NetUI.toast("Przeciwnik ma inną wersję gry - mogą wystąpić błędy.");
 				NetUI.update();
@@ -400,6 +804,21 @@ const Net = {
 			case "bye":
 				this.resetConnection();
 				this.handleLostOpponent("Przeciwnik się rozłączył.");
+				return;
+			case "away":
+				// the opponent's page is closing or reloading
+				if (this.session)
+					return this.startReconnect(false);
+				this.resetConnection();
+				this.handleLostOpponent("Przeciwnik się rozłączył.");
+				return;
+			case "resume":
+				if (!this.session || m.g !== this.session.gid) {
+					// we no longer play that match
+					this.send({t: "lobby"});
+					return;
+				}
+				this.session.my.slice(Math.max(0, m.recv | 0)).forEach(x => this.send(x));
 				return;
 			case "ready": {
 				const deck = NetDeck.validate(m.deck);
@@ -422,7 +841,7 @@ const Net = {
 				if (this.role !== "guest")
 					return;
 				if (this.localReady && this.remoteReady)
-					this.beginGame(m.seed >>> 0, m.gid);
+					this.beginGame(m.seed >>> 0, m.gid, String(m.key || ""));
 				else
 					this.send({t: "lobby"}); // we cancelled at the same moment - the host goes back too
 				return;
@@ -443,8 +862,19 @@ const Net = {
 			case "pick":
 			case "row":
 			case "first":
-				if (!this.inGame || m.g !== this.gameId)
+				if (!this.inGame || m.g !== this.gameId || !this.session)
 					return;
+				if (typeof m.n === "number") {
+					if (m.n < this.session.op.length)
+						return; // already have it (resent after reconnecting)
+					if (m.n > this.session.op.length) {
+						// a move went missing - ask for everything from the first missing one
+						this.send({t: "resume", g: this.session.gid, recv: this.session.op.length, key: this.session.key});
+						return;
+					}
+				}
+				this.session.op.push(m);
+				NetStore.save(this.session);
 				this.queue.push(m);
 				this.flushQueue();
 				return;
@@ -483,16 +913,30 @@ const Net = {
 			return;
 		const seed = SeededRNG.randomSeed();
 		const gid = this.gameId + 1;
-		this.send({t: "start", seed: seed, gid: gid});
-		this.beginGame(seed, gid);
+		const key = SeededRNG.randomSeed().toString(36) + SeededRNG.randomSeed().toString(36);
+		this.send({t: "start", seed: seed, gid: gid, key: key});
+		this.beginGame(seed, gid, key);
 	},
 
-	beginGame(seed, gid) {
+	beginGame(seed, gid, key) {
 		const meDeck = this.localReady, opDeck = this.remoteReady;
 		this.localReady = this.remoteReady = null;
+		this.session = {
+			v: NET_SESSION_VERSION, role: this.role, code: this.code, myName: this.myName, opName: this.opName,
+			gid: gid, seed: seed, key: key, decks: {me: meDeck, op: opDeck}, my: [], op: []
+		};
+		NetStore.save(this.session);
+		this.launchGame(false);
+	},
+
+	// Sets up the board for the saved match. replay: rebuild it from the saved moves.
+	launchGame(replay) {
+		const s = this.session;
+		const seed = s.seed;
+		const meDeck = s.decks.me, opDeck = s.decks.op;
 		this.lastDecks = {me: meDeck, op: opDeck};
-		this.gameId = gid;
-		this.queue = [];
+		this.gameId = s.gid;
+		this.queue = replay ? s.op.slice() : [];
 		this.waiter = null;
 		this.hashes = {local: {}, remote: {}};
 		this.desyncReported = false;
@@ -508,6 +952,8 @@ const Net = {
 		player_op = new Player(1, this.opName || "Przeciwnik", NetDeck.toGameDeck(opDeck), {role: opRole, seed: seed, remote: true});
 		dm.elem.classList.add("hide");
 		NetUI.update();
+		if (replay)
+			NetReplay.start(s.my);
 		game.startGame();
 	},
 
@@ -537,6 +983,8 @@ const Net = {
 	// Stops waiting for moves of the current game. Pending waits are dropped, never resolved,
 	// so the abandoned game simply stops.
 	abortGame() {
+		NetReplay.cancel();
+		this.clearSession();
 		this.inGame = false;
 		this.queue = [];
 		this.waiter = null;
@@ -554,9 +1002,12 @@ const Net = {
 
 	// Sends a decision of the local player. Does nothing outside online games.
 	sendMove(m) {
-		if (!this.inGame)
+		if (!this.inGame || NetReplay.active || !this.session)
 			return;
 		m.g = this.gameId;
+		m.n = this.session.my.length;
+		this.session.my.push(m);
+		NetStore.save(this.session); // saved before sending, so a reload cannot lose it
 		if (this.debug)
 			console.log("[net] ->", JSON.stringify(m));
 		this.send(m);
@@ -638,7 +1089,7 @@ const Net = {
 	},
 
 	checkpoint(turn) {
-		if (!this.inGame)
+		if (!this.inGame || NetReplay.active)
 			return;
 		const s = this.stateString();
 		const h = SeededRNG.derive(0, s);
@@ -755,7 +1206,9 @@ const NetUI = {
 		const nameInput = document.getElementById("online-name");
 		try { nameInput.value = localStorage.getItem("gwent-online-name") || ""; } catch (e) {}
 		Net.myName = nameInput.value.trim();
-		window.addEventListener("beforeunload", () => Net.send({t: "bye"}));
+		// during a match the opponent waits for us to come back (the page may only be reloading)
+		window.addEventListener("beforeunload", () => Net.send({t: Net.session ? "away" : "bye"}));
+		document.getElementById("online-reconnect-end").addEventListener("click", () => Net.giveUpReconnect("Partia została przerwana."));
 		// changing the deck after clicking "Ready" withdraws the ready state
 		document.getElementById("deck-customization").addEventListener("click", e => {
 			if (Net.localReady && game.state === GameState.CUSTOMIZE
@@ -768,13 +1221,15 @@ const NetUI = {
 		this.startLabel = this.startButton.innerHTML;
 		if (Net.localMode)
 			document.getElementById("online-mode-note").classList.remove("hide");
+		this.showIdle();
+		if (Net.restore())
+			return;
 		// a link like index.html#join=ABCDE fills in the code
 		const m = location.hash.match(/join=([A-Za-z0-9]+)/);
 		if (m) {
 			document.getElementById("online-code").value = Net.normalizeCode(m[1]);
 			setTimeout(() => this.openLobby(), 300);
 		}
-		this.showIdle();
 	},
 
 	saveName() {
@@ -879,6 +1334,24 @@ const NetUI = {
 		const busy = (typeof Carousel !== "undefined" && Carousel.curr) || (typeof Popup !== "undefined" && Popup.curr);
 		if (el)
 			el.classList.toggle("hide", !this.waiting || !Net.inGame || !!busy);
+	},
+
+	// Covers the board while a match is fast-forwarded after a reload
+	setReplaying(on) {
+		document.getElementById("online-replay").classList.toggle("hide", !on);
+	},
+
+	// Banner shown while the connection to the opponent is being restored
+	showReconnect(selfReloaded, secondsLeft) {
+		const time = Math.floor(secondsLeft / 60) + ":" + String(secondsLeft % 60).padStart(2, "0");
+		document.getElementById("online-reconnect-text").innerHTML = (selfReloaded
+			? "Wznawianie połączenia z przeciwnikiem…"
+			: "Przeciwnik stracił połączenie. Czekam na jego powrót…") + " (" + time + ")";
+		document.getElementById("online-reconnect").classList.remove("hide");
+	},
+
+	hideReconnect() {
+		document.getElementById("online-reconnect").classList.add("hide");
 	},
 
 	toast(text, duration = 4500) {
