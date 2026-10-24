@@ -2061,6 +2061,7 @@ class UI {
 				else {
 					clearInterval(timer);
 					ui.toggleMusic_elem.classList.remove("fade");
+					ui.youtube.setVolume(Settings.musicLevel() * 100);
 					if (!Settings.music.isEnabled())
 					{
 						setTimeout(()=>ui.toggleMusic(), 10);
@@ -2654,6 +2655,9 @@ class DeckMaker {
 		this.leader_elem = document.getElementById("card-leader");
 		this.leader_elem.children[1].addEventListener("click", () => this.selectLeader(), false);
 		this.leader_elem.children[1].addEventListener('mouseenter', CLICK_EVENT_SFX);
+		this.filters = {bank: "all", deck: "all"};
+		this.initFactionTabs();
+		this.initFilters();
 		this.loadFactionDeck(Settings.lastFaction.get(), true);
 
 		this.opponentData = Settings.opponentDeckCustom.get();
@@ -2683,6 +2687,59 @@ class DeckMaker {
 		this.makeBank(this.faction, faction_deck.cards);
 		this.update();
 	}
+
+	// Creates a shield button for each faction to switch decks with a single click
+	initFactionTabs()
+	{
+		this.factionTabs = document.getElementById("faction-tabs");
+		for (const f of Object.keys(factions)) {
+			const tab = document.createElement("div");
+			tab.dataset.faction = f;
+			tab.dataset.title = factions[f].name;
+			tab.style.backgroundImage = iconURL("deck_shield_" + f);
+			tab.addEventListener("click", () => {
+				if (f !== this.faction)
+					AudioManager.playSFX('ui_card_bank');
+				this.loadFactionDeck(f);
+			}, false);
+			tab.addEventListener("mouseenter", CLICK_EVENT_SFX, false);
+			this.factionTabs.appendChild(tab);
+		}
+	}
+
+	// Adds category filters above the card collection and the deck
+	initFilters()
+	{
+		for (const elem of document.querySelectorAll(".card-filters")) {
+			const target = elem.dataset.target;
+			for (const [key, filter] of Object.entries(DeckMaker.filters)) {
+				const button = document.createElement("div");
+				button.dataset.filter = key;
+				button.dataset.title = filter.title;
+				button.style.backgroundImage = iconURL(filter.icon);
+				if (key === this.filters[target])
+					button.classList.add("active");
+				button.addEventListener("click", () => {
+					this.filters[target] = key;
+					elem.querySelectorAll("div").forEach(b => b.classList.toggle("active", b === button));
+					this.update();
+				}, false);
+				button.addEventListener("mouseenter", CLICK_EVENT_SFX, false);
+				elem.appendChild(button);
+			}
+		}
+	}
+
+	// Card categories used by the collection and deck filters
+	static filters = {
+		all: {title: "All cards", icon: "deck_stats_count", test: () => true},
+		close: {title: "Close combat", icon: "card_row_close", test: c => c.row === "close" || c.row === "agile"},
+		ranged: {title: "Ranged combat", icon: "card_row_ranged", test: c => c.row === "ranged" || c.row === "agile"},
+		siege: {title: "Siege", icon: "card_row_siege", test: c => c.row === "siege"},
+		hero: {title: "Hero cards", icon: "deck_stats_hero", test: c => c.ability.split(" ").includes("hero")},
+		weather: {title: "Weather cards", icon: "card_weather_frost", test: c => c.deck === "weather"},
+		special: {title: "Special cards", icon: "card_special_horn", test: c => c.deck === "special"},
+	};
 
 	isValidFaction(factionName)
 	{
@@ -2714,6 +2771,8 @@ class DeckMaker {
 		}
 		this.faction = faction_name;
 		Settings.lastFaction.set(faction_name);
+		for (const tab of this.factionTabs.children)
+			tab.classList.toggle("active", tab.dataset.faction === faction_name);
 		return true;
 	}
 	
@@ -2772,8 +2831,10 @@ class DeckMaker {
 	
 	// Updates the card preview elements when any changes are made to the deck
 	update(){
+		const bankFilter = DeckMaker.filters[this.filters.bank].test;
+		const deckFilter = DeckMaker.filters[this.filters.deck].test;
 		for (let x of this.bank) {
-			if (x.count)
+			if (x.count && bankFilter(card_dict[x.index]))
 				x.elem.classList.remove("hide");
 			else
 				x.elem.classList.add("hide");
@@ -2781,7 +2842,7 @@ class DeckMaker {
 		let total = 0, units = 0, special = 0, strength = 0, hero = 0;
 		for (let x of this.deck) {
 			let card_data = card_dict[x.index];
-			if (x.count)
+			if (x.count && deckFilter(card_data))
 				x.elem.classList.remove("hide");
 			else
 				x.elem.classList.add("hide");
@@ -3345,8 +3406,28 @@ class SavedString
 	}
 }
 
+// A volume level from 0 to 100 stored in localStorage
+class VolumeOption
+{
+	constructor(key, defaultValue = 100)
+	{
+		this.key = key;
+		const saved = Number.parseInt(localStorage?.getItem(this.key));
+		this.value = isNumber(saved) ? clamp(0, 100, saved) : defaultValue;
+	}
+	get() { return this.value; }
+	set(value)
+	{
+		this.value = clamp(0, 100, Math.round(value));
+		localStorage?.setItem(this.key, this.value);
+	}
+}
+
 class Settings
 {
+	static masterVolume = new VolumeOption("gc-volume-master", 100);
+	static musicVolume = new VolumeOption("gc-volume-music", 100);
+	static sfxVolume = new VolumeOption("gc-volume-sfx", 100);
 	static music = new ToggleOption("gc-music", true);
 	static notifications = new ToggleOption("gc-notifications", true);
 	static soundEffects = new ToggleOption("gc-sound-effects", true);
@@ -3358,6 +3439,10 @@ class Settings
 	static skelligesDeck = new SavedDeck("gc-deck-skellige", premade_deck[8]);
 	static opponentDeckCustom = new SavedDeck("gc-deck-opponent-custom");
 	
+	// Effective volumes in the range [0,1] (master * channel)
+	static sfxLevel() { return Settings.masterVolume.get() * Settings.sfxVolume.get() / 10000; }
+	static musicLevel() { return Settings.masterVolume.get() * Settings.musicVolume.get() / 10000; }
+
 	static getFactionSettings(factionName)
 	{
 		switch(factionName) {
@@ -3584,7 +3669,9 @@ function audioURL(name, ext = "mp3") {
 // Get audio instance
 function getAudio(name, ext = "mp3")
 {
-	return new Audio(audioURL(name, ext));
+	const audio = new Audio(audioURL(name, ext));
+	audio.volume = Settings.sfxLevel();
+	return audio;
 }
 // Play sound effect
 async function playAudio(name, ext = "mp3")
