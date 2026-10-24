@@ -161,15 +161,46 @@
 /* Quick toggles in the deck builder: music, effects, settings */
 #toggle-music.deck-menu { left: 46.1vw; }
 #toggle-sfx.deck-menu { left: 48.8vw; }
+/* During a match the quick toggles live in the settings panel; only a small gear
+   next to the exit button stays on the board */
+#toggle-music:not(.deck-menu),
+#toggle-sfx:not(.deck-menu),
+#toggle-notifications:not(.deck-menu) {
+	display: none;
+}
 #open-settings {
-	top: 48.9vw;
-	left: 23vw;
+	top: 1.4vw;
+	left: 3.6vw;
+	width: 2vw;
+	height: 2vw;
 	cursor: pointer;
+	z-index: 10;
+}
+#open-settings > img {
+	width: 2vw;
+	height: 2vw;
+	opacity: 0.35;
+	transition: opacity 0.3s, transform 0.3s;
+}
+#open-settings:hover > img {
+	opacity: 1;
+	transform: rotate(45deg);
+}
+#open-settings[data-title]:hover::after {
+	bottom: -2.2vw;
+	left: -0.5vw;
 }
 #open-settings.deck-menu {
 	top: 45.3vw;
 	left: 51.5vw;
+	width: 2.5vw;
+	height: 2.5vw;
 	z-index: 86;
+}
+#open-settings.deck-menu > img {
+	width: 2.5vw;
+	height: 2.5vw;
+	opacity: 1;
 }
 
 /* ----------- settings panel ------------------ */
