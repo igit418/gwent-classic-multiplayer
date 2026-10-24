@@ -124,7 +124,22 @@ Szczegóły, testowanie lokalne i hosting opisuje [ONLINE.md](ONLINE.md).
 </details>
 
 > [!NOTE]
-> W bardzo restrykcyjnych sieciach (niektóre firmowe lub komórkowe) bezpośrednie połączenie może się nie udać. Zwykle pomaga przejście na domowe Wi-Fi.
+> W bardzo restrykcyjnych sieciach (niektóre firmowe lub komórkowe) bezpośrednie połączenie może się nie udać. Pomaga wtedy serwer TURN, który przekazuje ruch między graczami.
+
+### 🛰️ Serwer TURN
+
+Ustawienia STUN/TURN są w pliku [`net-config.js`](net-config.js). Najprościej użyć darmowego [Metered Open Relay](https://www.metered.ca/tools/openrelay/) (20 GB miesięcznie, a partia Gwinta to kilkadziesiąt KB):
+
+1. Załóż konto na [dashboard.metered.ca](https://dashboard.metered.ca/signup?tool=turnserver) i utwórz klucz API do poświadczeń (credential API key).
+2. W `net-config.js` wpisz:
+   ```js
+   window.GWENT_NET_CONFIG = {
+   	credentialsUrl: "https://<appname>.metered.live/api/v1/turn/credentials?apiKey=<klucz API>"
+   };
+   ```
+3. Sprawdź, otwierając grę u obu graczy z dopiskiem `?relay` (połączenie tylko przez TURN).
+
+Można też podać stały adres i hasło (`turnUrls`, `turnUsername`, `turnCredential`) albo ustawić wszystko zmiennymi repozytorium przez GitHub Actions. Szczegóły w [ONLINE.md](ONLINE.md#serwer-turn-połączenie-przez-trudne-sieci).
 
 <br>
 

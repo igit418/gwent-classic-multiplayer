@@ -31,6 +31,7 @@ komunikat, a szczegóły trafią do konsoli przeglądarki (F12). Adres z dopiski
 wypisuje w konsoli wszystkie ruchy, co pomaga przy zgłaszaniu błędów.
 
 Pliki związane z trybem online:
+- `net-config.js` – ustawienia serwerów STUN/TURN,
 - `net.js` – połączenie, lobby, kolejka ruchów, kontrola synchronizacji, `ControllerRemote`,
 - zmiany w `gwent.js`, `abilities.js`, `factions.js`, `common.js` (generator `SeededRNG`),
 - panel lobby w `index.html` i style na końcu `style.css`.
@@ -48,10 +49,94 @@ Grę trzeba uruchomić przez serwer HTTP, np. `python -m http.server`, a nie z p
    wybierz gałąź (np. `main`) i folder `/ (root)`, zapisz.
 3. Po minucie gra będzie pod adresem `https://<twoja-nazwa>.github.io/<nazwa-repozytorium>/`.
 
+## Serwer TURN (połączenie przez trudne sieci)
+
+Przeglądarki najpierw próbują połączyć się bezpośrednio (pomaga w tym serwer STUN). Gdy obaj
+gracze siedzą za restrykcyjnym NAT-em (sieci firmowe, część sieci komórkowych, niektóre
+akademiki), połączenie bezpośrednie się nie uda i ruch trzeba przepuścić przez **serwer TURN**,
+który przekazuje dane między graczami.
+
+Bez konfiguracji gra używa domyślnych serwerów PeerJS (STUN Google i darmowy, „best effort”
+TURN PeerJS). Bywają przeciążone, więc warto ustawić własny TURN. Gwint przesyła tylko ruchy
+graczy, czyli kilka–kilkadziesiąt KB na partię, więc darmowe limity wystarczą na tysiące gier.
+
+### Polecana usługa: Metered.ca (Open Relay)
+
+[Metered Open Relay](https://www.metered.ca/tools/openrelay/) daje **20 GB ruchu TURN miesięcznie
+za darmo** i ma API, które wydaje dane logowania prosto do przeglądarki.
+
+1. Załóż darmowe konto: <https://dashboard.metered.ca/signup?tool=turnserver>.
+2. W panelu zapisz nazwę aplikacji (`<appname>`) i utwórz **klucz API do poświadczeń**
+   (credential API key). Nie używaj klucza `secretKey`: ten nie może trafić do przeglądarki.
+3. Ustaw adres w `net-config.js` (patrz niżej):
+   ```js
+   window.GWENT_NET_CONFIG = {
+   	credentialsUrl: "https://<appname>.metered.live/api/v1/turn/credentials?apiKey=<klucz API>"
+   };
+   ```
+   Gra pobiera listę serwerów STUN/TURN przy tworzeniu i dołączaniu do gry.
+
+Alternatywy: [Cloudflare Realtime TURN](https://developers.cloudflare.com/realtime/turn/) (duży
+darmowy limit, ale dane logowania trzeba generować po stronie serwera, np. w Cloudflare Worker,
+którego adres wpisujesz jako `credentialsUrl`) albo własny serwer
+[coturn](https://github.com/coturn/coturn) na tanim VPS-ie.
+
+### Konfiguracja przez plik `net-config.js`
+
+Plik `net-config.js` w katalogu gry ustawia obiekt `window.GWENT_NET_CONFIG`. Wszystkie pola są
+opcjonalne:
+
+| Pole | Znaczenie |
+|------|-----------|
+| `credentialsUrl` | Adres zwracający JSON z listą serwerów ICE (np. API Metered). |
+| `turnUrls` | Adres TURN albo lista, np. `["turn:serwer:3478", "turns:serwer:443?transport=tcp"]`. |
+| `turnUsername`, `turnCredential` | Login i hasło do `turnUrls`. |
+| `iceServers` | Pełna lista obiektów `RTCIceServer`, użyta bez zmian. |
+| `relayOnly` | `true` wymusza ruch przez TURN (tylko do testów). |
+
+Gdy ustawisz cokolwiek, domyślne serwery PeerJS są pomijane; jeśli w liście nie ma STUN, gra
+dodaje `stun:stun.l.google.com:19302`, żeby połączenia bezpośrednie nadal działały.
+
+Przykład ze stałym loginem (np. własny coturn):
+```js
+window.GWENT_NET_CONFIG = {
+	turnUrls: ["turn:turn.example.com:3478", "turns:turn.example.com:443?transport=tcp"],
+	turnUsername: "gwent",
+	turnCredential: "haslo"
+};
+```
+
+> **Uwaga:** zawartość `net-config.js` trafia do każdego gracza, więc jest publiczna. Wpisuj tam
+> tylko dane przeznaczone dla przeglądarki (klucz API Metered do poświadczeń, a nie `secretKey`).
+
+### Konfiguracja przez zmienne (GitHub Actions)
+
+Jeśli nie chcesz trzymać ustawień w repozytorium, workflow `.github/workflows/pages.yml` może
+publikować grę na GitHub Pages i generować `net-config.js` ze zmiennych repozytorium:
+
+1. **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+2. **Settings → Secrets and variables → Actions → Variables** i dodaj:
+   - `PAGES_FROM_ACTIONS` = `true` (włącza workflow),
+   - `TURN_CREDENTIALS_URL` (np. adres API Metered) **albo** `TURN_URLS` (adresy rozdzielone
+     przecinkami), `TURN_USERNAME`, `TURN_CREDENTIAL`,
+   - opcjonalnie `TURN_RELAY_ONLY` = `true`.
+3. Zrób push na `main` albo uruchom workflow ręcznie (**Actions → Deploy to GitHub Pages → Run
+   workflow**).
+
+Te same zmienne środowiskowe obsługuje skrypt `node tools/write-net-config.js`, przydatny przy
+innym hostingu (np. Netlify, Vercel) jako krok budowania.
+
+### Jak sprawdzić, że TURN działa
+
+Otwórz grę z dopiskiem `?relay` (np. `index.html?relay`) u **obu** graczy. Wtedy WebRTC może
+użyć tylko serwera TURN, więc jeśli połączenie się uda, TURN jest ustawiony poprawnie. Dopisek
+`?debug` wypisuje w konsoli (F12) użyte serwery ICE. W `chrome://webrtc-internals` widać, czy
+wybrana para kandydatów ma typ `relay`.
+
 ## Ograniczenia
 
 - Połączenie bezpośrednie czasem nie działa w bardzo restrykcyjnych sieciach (niektóre sieci
-  firmowe lub komórkowe). Wtedy pomaga zmiana sieci, np. na domowe Wi-Fi.
+  firmowe lub komórkowe). Pomaga wtedy serwer TURN (patrz wyżej) albo zmiana sieci.
 - Gra ufa obu klientom: osoba znająca JavaScript mogłaby w konsoli podejrzeć karty rywala.
   Przy grze ze znajomymi nie ma to znaczenia.
 - Zamknięcie lub odświeżenie karty kończy partię u obu graczy.
