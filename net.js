@@ -1213,7 +1213,7 @@ const NetUI = {
 		// changing the deck after clicking "Ready" withdraws the ready state
 		document.getElementById("deck-customization").addEventListener("click", e => {
 			if (Net.localReady && game.state === GameState.CUSTOMIZE
-				&& e.target.closest("#card-bank, #card-deck, #card-leader, #change-faction, #upload-deck")) {
+				&& e.target.closest("#card-bank, #card-deck, #card-leader, #faction-tabs, #upload-deck")) {
 				Net.ready();
 				this.toast("Talia się zmieniła - kliknij „Gotowy” ponownie.");
 			}
