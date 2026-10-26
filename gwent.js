@@ -2841,8 +2841,6 @@ class DeckMaker {
 		document.getElementById("add-opponent").addEventListener("change", () => this.uploadOpponentDeck(), false);
 
 
-		this.change_elem = document.getElementById("change-faction");
-		this.change_elem.addEventListener("click", () => this.selectFaction(), false);
 		
 		document.getElementById("download-deck").addEventListener("click", () => this.downloadDeck(), false);
 		document.getElementById("add-file").addEventListener("change", () => this.uploadPlayerDeck(), false);
@@ -3085,20 +3083,6 @@ class DeckMaker {
 			this.leader_elem.children[1].style.backgroundImage = largeURL(data.card.deck + "_" + data.card.filename);
 			Settings.getFactionSettings(this.leader.card.deck).setLeader(this.leader);
 			AudioManager.playSFX('ui_card_bank');
-		}, () => true, false, true);
-		Carousel.curr.index = index;
-		Carousel.curr.update();
-	}
-	
-	// Opens a Carousel to allow the client to select a faction for their deck
-	selectFaction() {
-		let container = new CardContainer();
-		container.cards = Object.keys(factions).map( f => {
-			return {abilities: [f], filename: f, desc_name: factions[f].name, desc: factions[f].description, faction: "faction"};
-		});
-		let index = container.cards.reduce((a,c,i) => c.filename === this.faction ? i : a, 0);
-		ui.queueCarousel(container, 1, (c,i) => {
-			this.loadFactionDeck(c.cards[i].filename);
 		}, () => true, false, true);
 		Carousel.curr.index = index;
 		Carousel.curr.update();
