@@ -3,7 +3,7 @@
 var ability_dict = {
 	clear: {
 		name: "Clear Weather",
-		description: "Removes all Weather Cards (Biting Frost, Impenetrable Fog and Torrential Rain) effects. ",
+		description: "Removes all Weather Cards (Biting Frost, Impenetrable Fog, Torrential Rain and Skellige Storm) effects. ",
 		audio: "clear"
 	},
 	frost: {
@@ -119,15 +119,17 @@ var ability_dict = {
 		name:"muster", 
 		description: "Find any cards with the same name in your deck and play them instantly. ",
 		placed: async (card) => {
-			let i = card.name.indexOf('-');
-			let cardName = i === -1 ?  card.name : card.name.substring(0, i);
-			if (card['muster'])
-			{
-				cardName = card['muster'];
+			let pred;
+			if (card.muster) {
+				// explicit target, e.g. Cerys summons Clan Drummond Shield Maidens
+				pred = c => c.name === card.muster;
+			} else {
+				let i = card.name.indexOf('-');
+				let cardName = i === -1 ?  card.name : card.name.substring(0, i);
+				pred = c => c.name.startsWith(cardName);
 			}
-			let pred = c => c.name.startsWith(cardName);
-			let units = card.holder.hand.getCards(pred).map(x => [card.holder.hand, x])
-			.concat(card.holder.deck.getCards(pred).map( x => [card.holder.deck, x] ) );
+			// as in The Witcher 3, only cards still in the deck are summoned, not those in hand
+			let units = card.holder.deck.getCards(pred).map( x => [card.holder.deck, x] );
 			if (units.length === 0)
 				return;
 			await card.animate("muster");
@@ -265,7 +267,7 @@ var ability_dict = {
 		weight: (card, ai) => ai.weightWeatherFromDeck(card, "fog")
 	},
 	foltest_lord: {
-		description: "Clear any weather effects (resulting from Biting Frost, Torrential Rain or Impenetrable Fog cards) in play.",
+		description: "Clear any weather effects (resulting from Biting Frost, Torrential Rain, Skellige Storm or Impenetrable Fog cards) in play.",
 		activated: async () => await weather.clearWeather(),
 		weight: (card, ai) =>  ai.weightCard( {row:"weather", name:"Clear Weather"} )
 	},
