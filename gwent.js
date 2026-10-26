@@ -2471,8 +2471,9 @@ class UI {
 }
 
 // Displays up to 5 cards for the client to cycle through and select to perform an action
-// Clicking the middle card performs the action on that card "count" times
-// Clicking adejacent cards shifts the menu to focus on that card
+// Dragging anywhere (mouse or touch) or the mouse wheel scrolls through the cards
+// Clicking a side card brings it to the middle, double clicking (double tapping) a card performs
+// the action on that card, up to "count" times. Clicking the empty space closes it if allowed.
 class Carousel {
 	constructor(container, count, action, predicate, bSort, bExit = false, title) {
 		if (count <= 0 || !container || !action || container.cards.length === 0)
@@ -2490,7 +2491,7 @@ class Carousel {
 		
 		if (!Carousel.elem) {
 			Carousel.elem = document.getElementById("carousel");
-			Carousel.elem.children[0].addEventListener("click", () => Carousel.curr.cancel(), false);
+			Carousel.initInput();
 		}
 		this.elem = Carousel.elem;
 		document.getElementsByTagName("main")[0].classList.remove("noclick");
@@ -2499,7 +2500,6 @@ class Carousel {
 		this.previews = this.elem.getElementsByClassName("card-lg");
 		this.desc = this.elem.getElementsByClassName("card-description")[0];
 		this.title_elem = this.elem.children[2];
-		[...this.elem.children[0].children].forEach(e => e.addEventListener("mouseout", evt=>Carousel.curr?.nudge(0)));
 		this.elem.children[0].style.setProperty('--carousel-trans-time', "0.25s");
 	}
 	
@@ -2529,10 +2529,143 @@ class Carousel {
 	
 	// Called by the client to cycle cards displayed by n
 	shift(event, n){
-		(event || window.event).stopPropagation();
-		this.index = Math.max(0, Math.min(this.indices.length-1, this.index+n));
+		event?.stopPropagation();
+		let index = Math.max(0, Math.min(this.indices.length-1, this.index+n));
+		if (index === this.index)
+			return false;
+		this.index = index;
 		AudioManager.playSFX('ui_card');
 		this.update();
+		return true;
+	}
+	
+	// Sets up the mouse, touch and wheel input shared by every carousel
+	static initInput() {
+		const elem = Carousel.elem, row = elem.children[0];
+		const slots = [...row.children];
+		const TAP_MOVE = 8;          // px a pointer may travel and still count as a click
+		const DOUBLE_TAP_MS = 400;   // max time between the clicks of a double click
+		const DOUBLE_TAP_DIST = 40;  // px the second click may land away from the first
+		let drag = null, lastTap = null, wheel = 0;
+		
+		// moves the cards by px without changing the selection. The row and every card are
+		// translated by --magnitude vw each, so the visual distance is twice the magnitude
+		const setOffset = px => row.style.setProperty('--magnitude', px / window.innerWidth * 100 / 2);
+		
+		slots.forEach((e, i) => {
+			e.addEventListener("pointerover", evt => {
+				if (!drag && evt.pointerType === "mouse")
+					Carousel.curr?.nudge(i - 2);
+			});
+			e.addEventListener("pointerout", evt => {
+				if (!drag && evt.pointerType === "mouse")
+					Carousel.curr?.nudge(0);
+			});
+		});
+		
+		elem.addEventListener("pointerdown", evt => {
+			if (!Carousel.curr || drag || (evt.pointerType === "mouse" && evt.button !== 0))
+				return;
+			let r2 = slots[2].getBoundingClientRect(), r3 = slots[3].getBoundingClientRect();
+			drag = {
+				id: evt.pointerId, target: evt.target, x0: evt.clientX, y0: evt.clientY,
+				x: evt.clientX, t: performance.now(), v: 0, offset: 0, moved: false,
+				step: Math.max(1, (r3.left + r3.width/2) - (r2.left + r2.width/2))
+			};
+		});
+		
+		elem.addEventListener("pointermove", evt => {
+			const c = Carousel.curr;
+			if (!drag || evt.pointerId !== drag.id || !c)
+				return;
+			if (!drag.moved) {
+				if (Math.hypot(evt.clientX - drag.x0, evt.clientY - drag.y0) < TAP_MOVE)
+					return;
+				drag.moved = true;
+				drag.x = drag.x0;
+				lastTap = null;
+				try { elem.setPointerCapture(evt.pointerId); } catch (e) {}
+				c.nudge(0);
+				row.classList.add("dragging");
+			}
+			const now = performance.now(), dx = evt.clientX - drag.x;
+			// smoothed velocity in px/ms, used to flick to the next card on release
+			drag.v = drag.v * 0.6 + dx / Math.max(1, now - drag.t) * 0.4;
+			drag.x = evt.clientX;
+			drag.t = now;
+			drag.offset += dx;
+			// dragging right brings the cards on the left into the middle
+			while (drag.offset > drag.step / 2 && c.shift(null, -1))
+				drag.offset -= drag.step;
+			while (drag.offset < -drag.step / 2 && c.shift(null, 1))
+				drag.offset += drag.step;
+			const atEdge = (drag.offset > 0 && c.index === 0) || (drag.offset < 0 && c.index === c.indices.length - 1);
+			setOffset(atEdge ? drag.offset * 0.3 : drag.offset);
+		});
+		
+		const endDrag = evt => {
+			const c = Carousel.curr;
+			if (!drag || evt.pointerId !== drag.id)
+				return;
+			const d = drag;
+			drag = null;
+			if (!c)
+				return row.classList.remove("dragging");
+			if (d.moved) {
+				if (performance.now() - d.t > 100)
+					d.v = 0;
+				let n = 0;
+				if (d.v > 0.4 || d.offset > d.step / 4)
+					n = -1;
+				else if (d.v < -0.4 || d.offset < -d.step / 4)
+					n = 1;
+				if (n !== 0 && c.shift(null, n))
+					d.offset += n * d.step;
+				const atEdge = (d.offset > 0 && c.index === 0) || (d.offset < 0 && c.index === c.indices.length - 1);
+				setOffset(atEdge ? d.offset * 0.3 : d.offset);
+				// let the remaining offset glide back to the middle
+				void row.offsetWidth;
+				row.classList.remove("dragging");
+				setOffset(0);
+				return;
+			}
+			if (evt.type === "pointercancel")
+				return;
+			const slot = slots.indexOf(d.target.closest?.(".card-lg"));
+			if (slot < 0) {
+				lastTap = null;
+				if (d.target === row)
+					c.cancel();
+				return;
+			}
+			const now = performance.now();
+			if (lastTap && now - lastTap.t < DOUBLE_TAP_MS
+					&& Math.hypot(evt.clientX - lastTap.x, evt.clientY - lastTap.y) < DOUBLE_TAP_DIST) {
+				// the first click already brought this card to the middle
+				c.index = lastTap.index;
+				lastTap = null;
+				c.select();
+				return;
+			}
+			const index = c.index + slot - 2;
+			lastTap = {t: now, x: evt.clientX, y: evt.clientY, index};
+			if (slot !== 2)
+				c.shift(null, slot - 2);
+		};
+		elem.addEventListener("pointerup", endDrag);
+		elem.addEventListener("pointercancel", endDrag);
+		
+		elem.addEventListener("wheel", evt => {
+			const c = Carousel.curr;
+			if (!c || drag)
+				return;
+			evt.preventDefault();
+			wheel += Math.abs(evt.deltaX) > Math.abs(evt.deltaY) ? evt.deltaX : evt.deltaY;
+			while (Math.abs(wheel) >= 60) {
+				c.shift(null, Math.sign(wheel));
+				wheel -= Math.sign(wheel) * 60;
+			}
+		}, {passive: false});
 	}
 
 	// called when mousing over/out of one of the carousel cards
@@ -2554,7 +2687,7 @@ class Carousel {
 	
 	// Called by client to perform action on the middle card in focus
 	async select(event) {
-		(event || window.event).stopPropagation();
+		event?.stopPropagation();
 		// ignore clicks while the previous selection is still being carried out (double clicks)
 		if (this.busy || this.count <= 0)
 			return;
@@ -2607,12 +2740,11 @@ class Carousel {
 			if (curr >= 0 && curr < this.indices.length) {
 				let card = this.container.cards[this.indices[curr]];
 				this.previews[i].style.backgroundImage = largeURL(card.faction + "_" + card.filename);
-				this.previews[i].classList.remove("hide");
-				this.previews[i].classList.remove("noclick");
+				this.previews[i].classList.remove("empty");
 			} else {
+				// an empty slot keeps its place so the middle card never jumps around
 				this.previews[i].style.backgroundImage = "";
-				this.previews[i].classList.add("hide");
-				this.previews[i].classList.add("noclick");
+				this.previews[i].classList.add("empty");
 			}
 		}
 		ui.setDescription(this.container.cards[this.indices[this.index]], this.desc);
