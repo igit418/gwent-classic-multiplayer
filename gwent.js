@@ -2312,7 +2312,8 @@ class UI {
 	// For a remote player the choices arrive over the network.
 	// bView: the carousel only lets the local client look at cards; it is not a game decision.
 	async queueCarousel(container, count, action, predicate, bSort, bQuit, title, bView = false){
-		if (game.currPlayer === player_op) {
+		// in the deck builder no players exist yet
+		if (player_op && game.currPlayer === player_op) {
 			if (player_op.controller instanceof ControllerAI)
 				for (let i=0; i<count; ++i){
 					let cards = container.cards.reduce((a,c,i) => !predicate || predicate(c) ? a.concat([i]) : a, []);
@@ -2325,7 +2326,7 @@ class UI {
 			return;
 		}
 		// after a page reload the local player's saved choices are played back
-		if (player_me.isRemote()) {
+		if (player_me?.isRemote()) {
 			if (!bView)
 				await player_me.controller.pickCards(container, count, action, predicate, [bSort, bQuit, title]);
 			return;
