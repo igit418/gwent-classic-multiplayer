@@ -321,6 +321,11 @@ html {
 	width: 100%;
 	height: calc(100vw * 1080 / 1920);
 	z-index:90;
+	/* drags and double taps are handled in Carousel.initInput */
+	touch-action: none;
+	user-select: none;
+	-webkit-user-select: none;
+	-webkit-tap-highlight-color: transparent;
 }
 
 /*
@@ -399,6 +404,18 @@ html {
 	display:inline-block;
 	background-size:cover;
 	background-position: center;
+	cursor: grab;
+}
+
+#carousel > :nth-child(1).dragging,
+#carousel > :nth-child(1).dragging > .card-lg {
+	transition: box-shadow 0.1s !important;
+	cursor: grabbing;
+}
+
+#carousel > :nth-child(1) > .card-lg.empty {
+	visibility: hidden;
+	pointer-events: none;
 }
 
 #carousel .card-description {
