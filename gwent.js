@@ -123,7 +123,7 @@ class ControllerAI {
 		while (musters.length > 0) {
 			let curr = musters.pop();
 			let i = curr.name.indexOf('-');
-			let name = i === -1 ? curr.name : curr.name.substring(0, i).trim();
+			let name = curr.muster || (i === -1 ? curr.name : curr.name.substring(0, i).trim());
 			if (!groups[name])
 				groups[name] = [];
 			let group = groups[name];
@@ -2822,7 +2822,7 @@ class DeckMaker {
 	makeBank(faction, deck) {
 		this.clear();
 		let cards = card_dict.map((c,i) => ({card:c, index:i})).filter(
-		p => [faction, "neutral", "weather", "special"].includes(p.card.deck) && p.card.row !== "leader");
+		p => [faction, "neutral", "weather", "special"].includes(p.card.deck) && p.card.row !== "leader" && (!p.card.factionOnly || p.card.factionOnly === faction));
 		
 		cards.sort( function(id1, id2) {
 			let a = card_dict[id1.index], b = card_dict[id2.index];
@@ -3147,7 +3147,7 @@ class DeckMaker {
 				warning += "ID " + c[0] + " does not correspond to a card.\n";
 				return false
 			}
-			if (![deck.faction, "neutral", "special", "weather"].includes(card.deck)) {
+			if (![deck.faction, "neutral", "special", "weather"].includes(card.deck) || card.factionOnly && card.factionOnly !== deck.faction) {
 				warning += "'" + card.name + "' cannot be used in a deck of faction type '" + deck.faction +"'\n";
 				return false;
 			}
@@ -3158,7 +3158,8 @@ class DeckMaker {
 			}
 			return true;
 		})
-		.map(c => ({index:c[0], count:Math.min(c[1], card_dict[c[0]].count)}) );
+		.map(c => ({index:c[0], count:Math.min(c[1], card_dict[c[0]].count)}) )
+		.filter(c => c.count > 0);
 		// prompt warning if necessary
 		if (warning)
 		{

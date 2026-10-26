@@ -1145,7 +1145,7 @@ const NetDeck = {
 				const data = card_dict[c.index];
 				if (!data || !(c.count > 0) || c.count > 10)
 					return null;
-				if (data.row === "leader" || (data.deck !== deck.faction && data.deck !== "neutral" && data.deck !== "special" && data.deck !== "weather"))
+				if (data.row === "leader" || (data.deck !== deck.faction && data.deck !== "neutral" && data.deck !== "special" && data.deck !== "weather") || (data.factionOnly && data.factionOnly !== deck.faction))
 					return null;
 				if (data.deck === "special" || data.deck === "weather")
 					special += c.count;
