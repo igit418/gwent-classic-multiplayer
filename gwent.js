@@ -2068,41 +2068,48 @@ class UI {
 		this.youtube = new YT.Player('youtube', {
 			videoId: "UE9fPWy1_o4",
 			playerVars:  { "autoplay" : 1, "controls" : 0, "loop" : 1, "playlist" : "UE9fPWy1_o4", "rel" : 0, "version" : 3, "modestbranding" : 1 },
-			events: { 'onStateChange': initButton }
+			events: { 'onReady': initButton, 'onStateChange': initButton }
 		});
 		
 		function initButton(){
 			if (ui.ytActive !== undefined)
 				return;
 			ui.ytActive = true;
-			ui.youtube.playVideo();
-			let timer = setInterval( () => {
-				if (ui.youtube.getPlayerState() !== YT.PlayerState.PLAYING)
-					ui.youtube.playVideo();
-				else {
-					clearInterval(timer);
-					ui.toggleMusic_elem.classList.remove("fade");
-					ui.youtube.setVolume(Settings.musicLevel() * 100);
-					if (!Settings.music.isEnabled())
-					{
-						setTimeout(()=>ui.toggleMusic(), 10);
-					}
-				}
-			}, 500);
+			ui.applyMusic();
 		}
+		// Browsers block audible autoplay until the page gets a click or key press
+		const resume = () => ui.applyMusic();
+		document.addEventListener("pointerdown", resume, { once: true });
+		document.addEventListener("keydown", resume, { once: true });
+	}
+	
+	// Plays or pauses the music to match the saved setting. The player may start muted
+	// (autoplay policy), so it is unmuted here and the volume reapplied.
+	applyMusic(){
+		this.toggleMusic_elem.classList.toggle("fade", !Settings.music.isEnabled());
+		if (!this.ytActive)
+			return;
+		clearInterval(this.musicTimer);
+		if (!Settings.music.isEnabled()) {
+			this.youtube.pauseVideo();
+			return;
+		}
+		this.youtube.unMute();
+		this.youtube.setVolume(Settings.musicLevel() * 100);
+		this.youtube.playVideo();
+		// retry for a while in case the player was still loading
+		let tries = 0;
+		this.musicTimer = setInterval(() => {
+			if (!Settings.music.isEnabled() || this.youtube.getPlayerState() === YT.PlayerState.PLAYING || ++tries > 20)
+				return clearInterval(this.musicTimer);
+			this.youtube.playVideo();
+		}, 500);
 	}
 	
 	// Called when client toggles the music
 	toggleMusic(){
-		const isPlaying = this.youtube?.getPlayerState() === YT.PlayerState.PLAYING;
-		if (isPlaying) {
-			this.youtube?.pauseVideo();
-			this.toggleMusic_elem.classList.add("fade");
-		} else {
-			this.youtube?.playVideo();
-			this.toggleMusic_elem.classList.remove("fade");
-		}
-		Settings.music.setEnabled(!isPlaying);
+		Settings.music.toggle();
+		this.applyMusic();
 	}
 
 	toggleNotifications() {
