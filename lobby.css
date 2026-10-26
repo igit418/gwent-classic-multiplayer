@@ -28,11 +28,27 @@
 	border-color: goldenrod;
 	box-shadow: 0 0 0.5vw rgba(218, 165, 32, 0.5);
 }
-#upload-deck { left: 36.5%; }
-#change-faction { left: 44.2%; }
-#download-deck { left: 52.6%; }
+/* One centered row over the leader card (leader is centered at 50%) */
+#deck-options-row {
+	position: absolute;
+	top: 14.6%;
+	left: 50%;
+	transform: translateX(-50%);
+	width: max-content;
+	/* equal-width columns (as wide as the widest button) keep the row symmetric */
+	display: grid;
+	grid-auto-flow: column;
+	grid-auto-columns: 1fr;
+	gap: 0.8vw;
+	pointer-events: none;
+}
+#deck-customization #deck-options-row .deck-options {
+	position: static;
+	text-align: center;
+	white-space: nowrap;
+	pointer-events: auto;
+}
 #play-online {
-	left: 61.4%;
 	color: goldenrod !important;
 	border-color: goldenrod !important;
 }
