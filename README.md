@@ -17,7 +17,7 @@ Utwórz grę, wyślij znajomemu kod i siadajcie do stołu. Bez instalacji, bez k
 
 <br>
 
-<img src="docs/board.jpg" alt="Rozgrywka online — plansza w trakcie partii" width="100%">
+<img src="docs/game-board.jpg" alt="Rozgrywka online — plansza w trakcie partii" width="100%">
 
 <sub><i>Partia online: na górze przeciwnik, na dole Ty. Napis „Ruch przeciwnika…” pokazuje, że gra czeka na jego decyzję. Zębatka w lewym górnym rogu otwiera ustawienia.</i></sub>
 
@@ -77,7 +77,7 @@ Osobne suwaki głośności ogólnej, muzyki i efektów oraz przełącznik komuni
 ## 🃏 Edytor talii
 
 <div align="center">
-<img src="docs/deck.jpg" alt="Edytor talii z tarczami frakcji i rzędem przycisków Upload Deck, Graj online, Download Deck" width="100%">
+<img src="docs/deck-builder.jpg" alt="Edytor talii z tarczami frakcji i rzędem przycisków Upload Deck, Graj online, Download Deck" width="100%">
 <sub><i>Edytor talii: po lewej tarcze frakcji, nad kolekcją i talią filtry kategorii, pośrodku dowódca i statystyki talii.</i></sub>
 </div>
 
@@ -100,7 +100,7 @@ Ta sama lista kart pojawia się przy wymianie kart na początku partii, wyborze 
 ### ⚙️ Ustawienia
 
 <div align="center">
-<img src="docs/settings.jpg" alt="Panel ustawień z suwakami głośności" width="70%">
+<img src="docs/settings-panel.jpg" alt="Panel ustawień z suwakami głośności" width="70%">
 <br>
 <sub><i>Panel ustawień otwierany zębatką: głośność ogólna, muzyka, efekty dźwiękowe i komunikaty w trakcie gry.</i></sub>
 </div>
@@ -127,9 +127,9 @@ Gra startuje, gdy obaj jesteście gotowi. Zmiana talii albo frakcji po kliknięc
 Jeśli w trakcie partii odświeżysz stronę albo stracisz na chwilę połączenie, gra sama wznowi partię. Przeciwnik zobaczy pasek z licznikiem i poczeka do 3 minut (może też zakończyć partię przyciskiem **Zakończ partię**).
 
 <div align="center">
-<img src="docs/lobby.jpg" alt="Okno tworzenia gry online z kodem" width="48%">
+<img src="docs/online-lobby.jpg" alt="Okno tworzenia gry online z kodem" width="48%">
 &nbsp;
-<img src="docs/ready.jpg" alt="Ekran talii z panelem przeciwnika online" width="48%">
+<img src="docs/online-ready.jpg" alt="Ekran talii z panelem przeciwnika online" width="48%">
 <br>
 <sub><i>Po lewej: kod gry do wysłania znajomemu. Po prawej: wybór talii, przycisk „Gotowy” i status przeciwnika pod nim.</i></sub>
 </div>
