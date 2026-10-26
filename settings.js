@@ -30,7 +30,7 @@ class SettingsPanel
 		["volume-master", "volume-sfx"].forEach(id => document.getElementById(id)
 			.addEventListener("change", () => AudioManager.playSFX('ui_card_bank')));
 
-		SettingsPanel.bindToggle("setting-music", () => Settings.music.isEnabled(), () => SettingsPanel.toggleMusic());
+		SettingsPanel.bindToggle("setting-music", () => Settings.music.isEnabled(), () => ui.toggleMusic());
 		SettingsPanel.bindToggle("setting-sfx", () => Settings.soundEffects.isEnabled(), () => ui.toggleSFX());
 		SettingsPanel.bindToggle("setting-notifications", () => Settings.notifications.isEnabled(), () => ui.toggleNotifications());
 	}
@@ -83,17 +83,6 @@ class SettingsPanel
 		input.refresh();
 	}
 
-	// ui.toggleMusic() needs a ready YouTube player. Before that only the saved choice changes,
-	// and the player applies it once it starts.
-	static toggleMusic()
-	{
-		if (ui.ytActive) {
-			ui.toggleMusic();
-			return;
-		}
-		Settings.music.toggle();
-	}
-
 	static applySfxVolume()
 	{
 		const level = Settings.sfxLevel();
@@ -105,8 +94,10 @@ class SettingsPanel
 
 	static applyMusicVolume()
 	{
-		if (typeof ui.youtube?.setVolume === "function")
-			ui.youtube.setVolume(Settings.musicLevel() * 100);
+		if (!ui.ytActive)
+			return;
+		ui.youtube.unMute();
+		ui.youtube.setVolume(Settings.musicLevel() * 100);
 	}
 }
 
